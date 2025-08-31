@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+input, select {
+  @apply border rounded-md px-3 py-2 text-sm bg-white border-gray-300;
+}
+label { @apply text-sm text-gray-700; }
+button { @apply px-3 py-2 rounded-md text-sm font-medium; }
