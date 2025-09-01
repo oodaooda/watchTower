@@ -36,6 +36,7 @@ class ScreenResultItem(BaseModel):
     fcf: Optional[float] = None            
     fcf_cagr_5y: Optional[float] = None    
     pe_ttm: Optional[float] = None
+    price: Optional[float]
     cik: Optional[int] = None # New
 
 

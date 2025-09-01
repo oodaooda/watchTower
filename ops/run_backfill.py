@@ -82,6 +82,11 @@ OCF_TAGS = [
 CAPEX_TAGS = [
     "PaymentsToAcquirePropertyPlantAndEquipment",
     "CapitalExpenditures",
+    "PaymentsToAcquirePropertyPlantAndEquipmentContinuingOperations",
+    "PaymentsToAcquireProductiveAssets",
+    "PaymentsToAcquirePropertyPlantAndEquipmentExcludingLeasedAssets",
+    "PurchaseOfPropertyAndEquipment",
+    "PurchasesOfPropertyAndEquipment",
 ]
 
 # Shares outstanding (end of period)
@@ -194,6 +199,7 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     capex_maps = build_tag_maps(cf, CAPEX_TAGS)
     capex_label, capex_map = merge_by_preference(capex_maps, CAPEX_TAGS)
 
+
     shares_maps = build_tag_maps(cf, SHARES_TAGS)
     shares_label, shares_map = merge_by_preference(shares_maps, SHARES_TAGS)
 
@@ -246,14 +252,14 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
         stmt = stmt.on_conflict_do_update( 
             index_elements=[FinancialAnnual.company_id, FinancialAnnual.fiscal_year],
             set_={
-                "revenue": stmt.excluded.revenue,
-                "net_income": stmt.excluded.net_income,
-                "cash_and_sti": stmt.excluded.cash_and_sti,
-                "total_debt": stmt.excluded.total_debt,
-                "cfo": stmt.excluded.cfo,                       # <-- rename
-                "capex": stmt.excluded.capex,                   # <-- rename
-                "shares_outstanding": stmt.excluded.shares_outstanding,
-                "source": stmt.excluded.source,
+                "revenue": ins.excluded.revenue,
+                "net_income": ins.excluded.net_income,
+                "cash_and_sti": ins.excluded.cash_and_sti,
+                "total_debt": ins.excluded.total_debt,
+                "cfo": ins.excluded.cfo,
+                "capex": ins.excluded.capex,
+                "shares_outstanding": ins.excluded.shares_outstanding,
+                "source": ins.excluded.source,
             },
         )
         db.execute(stmt)

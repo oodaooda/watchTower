@@ -20,6 +20,9 @@ export type ScreenRow = {
   fcf_cagr_5y: number | null;
   pe_ttm: number | null;
   cik?: number | null;
+  price?: number | null;
+  fair_value_per_share?: number | null;
+  upside_vs_price?: number | null;
 };
 
 export type DCFResponse = {
@@ -80,10 +83,32 @@ function buildQS(params: Record<string, unknown>) {
 // GET /screen
 export async function fetchScreen(
   params: Record<string, string | number | undefined>
-): Promise<ScreenRow[]> {
-  const res = await fetch(`${API}/screen?${buildQS(params)}`);
-  if (!res.ok) throw new Error(`screen fetch failed: HTTP ${res.status}`);
-  return (await res.json()) as ScreenRow[];
+) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  });
+  const res = await fetch(`${API_BASE}/screen?${qs.toString()}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export type ValuationSummary = {
+  ticker: string;
+  price: number | null;
+  fair_value_per_share: number | null;
+  upside_vs_price: number | null;
+};
+
+export async function fetchValuationSummary(
+  tickers: string
+): Promise<ValuationSummary[]> {
+  const url = `${API_BASE}/valuation/summary?tickers=${encodeURIComponent(
+    tickers
+  )}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 

@@ -27,6 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, declarative_base, relationship
 
+
 from app.core.db import Base
 
 
@@ -57,32 +58,32 @@ class FinancialAnnual(Base):
     __tablename__ = "financials_annual"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), index=True, nullable=False)
-    fiscal_year = Column(Integer, index=True, nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    fiscal_year = Column(Integer, nullable=False, index=True)
     fiscal_period = Column(String, nullable=False)
-    report_date = Column(Date, nullable=True)
+    report_date = Column(Date)
 
     revenue = Column(Numeric(20, 4))
     net_income = Column(Numeric(20, 4))
     cash_and_sti = Column(Numeric(20, 4))
     total_debt = Column(Numeric(20, 4))
-    shares_diluted = Column(Numeric(20, 4))
+
+    # existing fields you already had
+    cfo = Column(Numeric(20, 4))
+    capex = Column(Numeric(20, 4))
+    shares_outstanding = Column(Numeric(20, 4))
+
+    # NEW: map the columns you added with ALTER TABLE
+    operating_cash_flow  = Column(Numeric(20, 4))
+    capital_expenditures = Column(Numeric(20, 4))
 
     source = Column(String, nullable=False)
     xbrl_confidence = Column(Numeric(6, 4))
 
-    # ✅ keep these canonical names
-    cfo = Column(Numeric(20, 4))                 # operating cash flow
-    capex = Column(Numeric(20, 4))               # capital expenditures
-    shares_outstanding = Column(Numeric(20, 4))  # end-of-period shares
-
-    # NEW
-    #operating_cash_flow = Column(Numeric(20, 4))
-    #capital_expenditures = Column(Numeric(20, 4))
-
-    # (keep whatever else you already have, e.g. shares_outstanding, etc.)
     __table_args__ = (
-        UniqueConstraint("company_id", "fiscal_year", name="uq_fin_annual_company_year"),
+        Index("ix_financials_company_year", "company_id", "fiscal_year"),
+        UniqueConstraint("company_id", "fiscal_year", name="uq_financials_company_year_idx"),
+        UniqueConstraint("company_id", "fiscal_year", "source", name="uq_financials_company_year_source"),
     )
 
 

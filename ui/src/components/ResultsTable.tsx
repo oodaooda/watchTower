@@ -1,9 +1,9 @@
 // ui/src/components/ResultsTable.tsx
-import React, { useEffect, useState } from "react";
-import type { ScreenRow, DCFResponse } from "../lib/api";
-import { fetchDCF } from "../lib/api";
+import React, { useState } from "react";
+import type { ScreenRow } from "../lib/api"; // or from "../types" if that's where ScreenRow lives
 import ValuationModal from "./ValuationModal";
 
+// ---- Formatters ------------------------------------------------------------
 function fmtPct(x: number | null | undefined) {
   if (x == null) return "—";
   return `${(x * 100).toFixed(1)}%`;
@@ -16,58 +16,19 @@ function fmtNum(x: number | null | undefined, d = 4) {
   if (x == null) return "—";
   return x.toFixed(d);
 }
+function fmtUSD(x: number | null | undefined, d = 2) {
+  if (x == null) return "—";
+  return `$${x.toFixed(d)}`;
+}
 function secUrlForTicker(t: string) {
-  return `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(t)}`;
+  return `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(
+    t
+  )}`;
 }
 
-type ValMap = Record<
-  string,
-  { loading: boolean; data?: DCFResponse; error?: string }
->;
-
+// ---- Component -------------------------------------------------------------
 export default function ResultsTable({ rows }: { rows: ScreenRow[] }) {
-  const [vals, setVals] = useState<ValMap>({});
   const [valTicker, setValTicker] = useState<string | null>(null);
-
-  // Hydrate valuation data per visible row
-  useEffect(() => {
-    let cancelled = false;
-    const tickers = rows.map((r) => r.ticker);
-
-    // prune old cache entries
-    setVals((prev) => {
-      const next: ValMap = {};
-      for (const t of tickers) if (prev[t]) next[t] = prev[t];
-      return next;
-    });
-
-    (async () => {
-      for (const t of tickers) {
-        if (cancelled) break;
-        if (vals[t]?.data || vals[t]?.loading) continue;
-
-        setVals((prev) => ({ ...prev, [t]: { loading: true } }));
-        try {
-          const d = await fetchDCF({ ticker: t }); // server defaults
-          if (!cancelled)
-            setVals((prev) => ({ ...prev, [t]: { loading: false, data: d } }));
-        } catch (e: any) {
-          if (!cancelled)
-            setVals((prev) => ({
-              ...prev,
-              [t]: { loading: false, error: e?.message ?? "error" },
-            }));
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
-
-  const getVal = (t: string) => vals[t]?.data;
 
   return (
     <>
@@ -85,7 +46,7 @@ export default function ResultsTable({ rows }: { rows: ScreenRow[] }) {
               <th className="py-2 pr-4">NI CAGR 5y</th>
               <th className="py-2 pr-4">FCF (bn)</th>
               <th className="py-2 pr-4">FCF CAGR 5y</th>
-              {/* NEW valuation columns */}
+              {/* NEW valuation columns (now taken directly from each row) */}
               <th className="py-2 pr-4">Price</th>
               <th className="py-2 pr-4">Fair Value / Share</th>
               <th className="py-2 pr-2">Upside</th>
@@ -95,11 +56,10 @@ export default function ResultsTable({ rows }: { rows: ScreenRow[] }) {
           </thead>
           <tbody>
             {rows.map((r) => {
-              const v = getVal(r.ticker);
               const upsideClass =
-                v?.upside_vs_price == null
+                r.upside_vs_price == null
                   ? ""
-                  : v.upside_vs_price >= 0
+                  : r.upside_vs_price >= 0
                   ? "text-emerald-500"
                   : "text-rose-500";
 
@@ -128,19 +88,11 @@ export default function ResultsTable({ rows }: { rows: ScreenRow[] }) {
                   <td className="py-2 pr-4">{fmtBn(r.fcf)}</td>
                   <td className="py-2 pr-4">{fmtPct(r.fcf_cagr_5y)}</td>
 
-                  {/* Price / FV / Upside from valuation */}
-                  <td className="py-2 pr-4">
-                    {v?.price != null ? `$${v.price.toFixed(2)}` : "—"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {v?.fair_value_per_share != null
-                      ? `$${v.fair_value_per_share.toFixed(2)}`
-                      : "—"}
-                  </td>
+                  {/* Price / FV / Upside now come straight from the row */}
+                  <td className="py-2 pr-4">{fmtUSD(r.price)}</td>
+                  <td className="py-2 pr-4">{fmtUSD(r.fair_value_per_share)}</td>
                   <td className={`py-2 pr-2 font-medium ${upsideClass}`}>
-                    {v?.upside_vs_price != null
-                      ? `${(v.upside_vs_price * 100).toFixed(1)}%`
-                      : "—"}
+                    {fmtPct(r.upside_vs_price)}
                   </td>
 
                   <td className="py-2 pl-2">
@@ -162,12 +114,9 @@ export default function ResultsTable({ rows }: { rows: ScreenRow[] }) {
         </table>
       </div>
 
-      {/* Modal */}
+      {/* Modal (runs the full DCF on demand for the clicked ticker) */}
       {valTicker && (
-        <ValuationModal
-          ticker={valTicker}
-          onClose={() => setValTicker(null)}
-        />
+        <ValuationModal ticker={valTicker} onClose={() => setValTicker(null)} />
       )}
     </>
   );
