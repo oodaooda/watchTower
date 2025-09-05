@@ -40,3 +40,12 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+
+# Root-level Node (avoid accidental installs at repo root)
+node_modules/
+package-lock.json
+package.json
+
+# Project-specific junk
+ui/.e
+EOF
