@@ -11,23 +11,22 @@ type RowWithVal = ScreenRow & {
 };
 
 // ---- Formatters ------------------------------------------------------------
-function ndash() {
-  return "—";
-}
+const ND = "—";
+const ndash = () => ND;
+
 function fmtPct(x: number | null | undefined) {
-  if (x == null) return ndash();
+  if (x == null) return ND;
   return `${(x * 100).toFixed(1)}%`;
 }
 function fmtNum(x: number | null | undefined, d = 4) {
-  if (x == null) return ndash();
+  if (x == null) return ND;
   return x.toFixed(d);
 }
 function fmtUSD(x: number | null | undefined, d = 2) {
-  if (x == null) return ndash();
+  if (x == null) return ND;
   return `$${x.toFixed(d)}`;
 }
 function secUrlForTicker(t: string) {
-  // matches your earlier link style
   return `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(
     t
   )}`;
@@ -37,12 +36,26 @@ function secUrlForTicker(t: string) {
 export default function ResultsTable({
   rows,
   loading,
+  filterText, // NEW: client-side filter text
 }: {
   rows: RowWithVal[];
   loading: boolean;
+  filterText?: string;
 }) {
   const [valTicker, setValTicker] = useState<string | null>(null);
-  const hasData = rows && rows.length > 0;
+
+  // Client-side search filter (by ticker or company name)
+  const q = (filterText ?? "").trim().toUpperCase();
+  const filteredRows =
+    q.length > 0
+      ? rows.filter(
+          (r) =>
+            r.ticker.toUpperCase().includes(q) ||
+            (r.name ?? "").toUpperCase().includes(q)
+        )
+      : rows;
+
+  const hasData = filteredRows.length > 0;
 
   return (
     <>
@@ -50,12 +63,10 @@ export default function ResultsTable({
         <table className="min-w-full text-[13px] md:text-sm whitespace-nowrap">
           <thead>
             <tr className="text-left border-b border-zinc-800 bg-zinc-900/40 text-[12.5px] md:text-sm">
-
               <th className="py-2 px-4">Ticker</th>
               <th className="py-2 px-4">Company</th>
               <th className="py-2 px-4">Industry</th>
               <th className="py-2 px-4">FY</th>
-              {/* Order like your screenshot: Price, Fair Value, Upside */}
 
               <th className="py-2 px-4 text-right">P/E (TTM)</th>
               <th className="py-2 px-4 text-right">Cash/Debt</th>
@@ -63,6 +74,7 @@ export default function ResultsTable({
               <th className="py-2 px-4 text-right">Rev CAGR (5y)</th>
               <th className="py-2 px-4 text-right">NI CAGR (5y)</th>
               <th className="py-2 px-4 text-right">FCF CAGR (5y)</th>
+
               <th className="py-2 px-4 text-right">Price</th>
               <th className="py-2 px-4 text-right">Fair Value</th>
               <th className="py-2 px-4 text-right">Upside</th>
@@ -89,7 +101,7 @@ export default function ResultsTable({
 
             {!loading &&
               hasData &&
-              rows.map((r) => {
+              filteredRows.map((r) => {
                 const upsideClass =
                   r.upside_vs_price == null
                     ? ""
@@ -129,9 +141,8 @@ export default function ResultsTable({
                     <td className="py-2 px-4">{r.industry ?? ndash()}</td>
                     <td className="py-2 px-4">{r.fiscal_year}</td>
 
-
                     <td className="py-2 px-4 text-right">
-                      {r.pe_ttm != null ? r.pe_ttm.toFixed(4) : ndash()}
+                      {fmtNum(r.pe_ttm, 4)}
                     </td>
                     <td className="py-2 px-4 text-right">
                       {fmtNum(r.cash_debt_ratio, 4)}
@@ -139,11 +150,17 @@ export default function ResultsTable({
                     <td className="py-2 px-4 text-right">
                       {r.growth_consistency ?? ndash()}
                     </td>
-                    <td className="py-2 px-4 text-right">{fmtPct(r.rev_cagr_5y)}</td>
-                    <td className="py-2 px-4 text-right">{fmtPct(r.ni_cagr_5y)}</td>
-                    <td className="py-2 px-4 text-right">{fmtPct(r.fcf_cagr_5y)}</td>
+                    <td className="py-2 px-4 text-right">
+                      {fmtPct(r.rev_cagr_5y)}
+                    </td>
+                    <td className="py-2 px-4 text-right">
+                      {fmtPct(r.ni_cagr_5y)}
+                    </td>
+                    <td className="py-2 px-4 text-right">
+                      {fmtPct(r.fcf_cagr_5y)}
+                    </td>
 
-                    {/* Price / FV / Upside (from your /valuation/summary merge in App.tsx) */}
+                    {/* Price / FV / Upside (from /valuation/summary merge) */}
                     <td className="py-2 px-4 text-right">{fmtUSD(r.price)}</td>
                     <td className="py-2 px-4 text-right">
                       {fmtUSD(r.fair_value_per_share)}
@@ -152,8 +169,7 @@ export default function ResultsTable({
                       {fmtPct(r.upside_vs_price)}
                     </td>
 
-
-                    {/* Valuation action → your existing modal */}
+                    {/* Valuation action → modal */}
                     <td className="py-2 px-4 text-right">
                       <button
                         type="button"

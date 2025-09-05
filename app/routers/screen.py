@@ -1,15 +1,18 @@
 # app/routers/screen.py
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import cast, Float, select, func, and_, desc
+from sqlalchemy import cast, Float, select, func, and_, or_, desc
 from sqlalchemy.orm import Session
+
 from app.core.db import get_db
 from app.core.models import Company, MetricsAnnual, PriceAnnual, FinancialAnnual
 
 router = APIRouter(prefix="/screen", tags=["screen"])
 
+
 @router.get("")
 def run_screen(
+    q: Optional[str] = Query(None, description="Search ticker or company name (ILIKE)"),
     pe_max: Optional[float] = Query(None, description="Maximum P/E (TTM)"),
     tickers: Optional[str] = Query(None, description="Comma-separated tickers e.g. AAPL,TSLA,MSFT"),
     cash_debt_min: Optional[float] = Query(None),
@@ -22,37 +25,55 @@ def run_screen(
     market_cap_min: Optional[float] = Query(None),
     industry: Optional[str] = Query(None),
     year: Optional[int] = Query(None),
+    include_untracked: bool = Query(False, description="Include untracked companies as well"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Returns paginated screener results:
+
     {
         "total_count": int,
         "items": [ {row}, {row}, ... ]
     }
     """
 
-    cash_min = cash_debt_min if cash_debt_min is not None else cash_debt_gte
-    growth_min = growth_consistency_min if growth_consistency_min is not None else growth_consistency_gte
-
+    # --- Aliases
     c, m, p, f = Company, MetricsAnnual, PriceAnnual, FinancialAnnual
 
-    # latest metrics year per company
+    # --- Params / aliases
+    cash_min = cash_debt_min if cash_debt_min is not None else cash_debt_gte
+    growth_min = (
+        growth_consistency_min
+        if growth_consistency_min is not None
+        else growth_consistency_gte
+    )
+
+    # --- Subqueries for latest rows
+    # latest metrics year per company (if year not pinned)
     if year is None:
         latest_m = (
             select(m.company_id, func.max(m.fiscal_year).label("latest_year"))
             .group_by(m.company_id)
             .subquery()
         )
-    # latest financials (for shares) per company
+
+    # latest financials (for shares_outstanding) per company
     latest_f = (
         select(f.company_id, func.max(f.fiscal_year).label("latest_fy"))
         .group_by(f.company_id)
         .subquery()
     )
 
+    # latest price per company (independent from metrics year)
+    latest_p = (
+        select(p.company_id, func.max(p.fiscal_year).label("fy_price"))
+        .group_by(p.company_id)
+        .subquery()
+    )
+
+    # --- Columns
     cols = (
         c.id.label("company_id"),
         c.ticker.label("ticker"),
@@ -71,35 +92,13 @@ def run_screen(
         (cast(p.close_price, Float) * cast(f.shares_outstanding, Float)).label("market_cap"),
     )
 
-    stmt = select(*cols).select_from(c).where(c.is_tracked.is_(True))
+    # --- Base FROM / WHERE
+    stmt = select(*cols).select_from(c)
+    if not include_untracked:
+        stmt = stmt.where(c.is_tracked.is_(True))
 
-    # ---- Filters ----
-    filters = []
-
-    if tickers:
-        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
-        if ticker_list:
-            filters.append(c.ticker.in_(ticker_list))
-
-    if industry:
-        filters.append((c.industry_name == industry) | (c.sic == industry))
-    if pe_max is not None:
-        filters.append(p.pe_ttm <= pe_max)
-    if cash_min is not None:
-        filters.append(m.cash_debt_ratio >= cash_min)
-    if growth_min is not None:
-        filters.append(m.growth_consistency >= growth_min)
-    if rev_cagr_min is not None:
-        filters.append(m.rev_cagr_5y >= rev_cagr_min)
-    if ni_cagr_min is not None:
-        filters.append(m.ni_cagr_5y >= ni_cagr_min)
-    if fcf_cagr_min is not None:
-        filters.append(m.fcf_cagr_5y >= fcf_cagr_min)
-    if market_cap_min is not None:
-        filters.append((p.close_price.isnot(None)) & (f.shares_outstanding.isnot(None)))
-        filters.append((cast(p.close_price, Float) * cast(f.shares_outstanding, Float)) >= market_cap_min)
-
-    # ---- Joins ----
+    # --- Joins
+    # metrics: either latest per company or pinned year
     if year is None:
         stmt = (
             stmt.join(latest_m, latest_m.c.company_id == c.id)
@@ -108,25 +107,75 @@ def run_screen(
     else:
         stmt = stmt.join(m, (m.company_id == c.id) & (m.fiscal_year == year))
 
-    stmt = stmt.join(p, (p.company_id == c.id) & (p.fiscal_year == m.fiscal_year), isouter=True)
+    # prices: latest per company (independent)
+    stmt = (
+        stmt.join(latest_p, latest_p.c.company_id == c.id, isouter=True)
+        .join(p, (p.company_id == c.id) & (p.fiscal_year == latest_p.c.fy_price), isouter=True)
+    )
+
+    # financials: latest per company (for shares_outstanding)
     stmt = (
         stmt.join(latest_f, latest_f.c.company_id == c.id, isouter=True)
         .join(f, (f.company_id == c.id) & (f.fiscal_year == latest_f.c.latest_fy), isouter=True)
     )
 
+    # --- Filters
+    filters = []
+
+    # server-side text search across ALL companies (ticker or name)
+    if q:
+        like = f"%{q.strip()}%"
+        filters.append(or_(c.ticker.ilike(like), c.name.ilike(like)))
+
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        if ticker_list:
+            filters.append(c.ticker.in_(ticker_list))
+
+    if industry:
+        # allow exact match by industry_name or SIC
+        filters.append((c.industry_name == industry) | (c.sic == industry))
+
+    if pe_max is not None:
+        filters.append(p.pe_ttm <= pe_max)
+
+    if cash_min is not None:
+        filters.append(m.cash_debt_ratio >= cash_min)
+
+    if growth_min is not None:
+        filters.append(m.growth_consistency >= growth_min)
+
+    if rev_cagr_min is not None:
+        filters.append(m.rev_cagr_5y >= rev_cagr_min)
+
+    if ni_cagr_min is not None:
+        filters.append(m.ni_cagr_5y >= ni_cagr_min)
+
+    if fcf_cagr_min is not None:
+        filters.append(m.fcf_cagr_5y >= fcf_cagr_min)
+
+    if market_cap_min is not None:
+        # only compute market cap if both components exist
+        filters.append((p.close_price.isnot(None)) & (f.shares_outstanding.isnot(None)))
+        filters.append((cast(p.close_price, Float) * cast(f.shares_outstanding, Float)) >= market_cap_min)
+
     if filters:
         stmt = stmt.where(and_(*filters))
 
-    # ---- Count before pagination ----
+    # --- Count before pagination
     total_stmt = select(func.count()).select_from(stmt.subquery())
     total_count = db.execute(total_stmt).scalar() or 0
 
-    # ---- Pagination ----
-    stmt = stmt.order_by(
-        p.pe_ttm.asc().nulls_last(),
-        desc(m.cash_debt_ratio),
-        c.ticker.asc(),
-    ).limit(limit).offset(offset)
+    # --- Order & paginate
+    stmt = (
+        stmt.order_by(
+            p.pe_ttm.asc().nulls_last(),  # lowest P/E first; nulls last
+            desc(m.cash_debt_ratio),
+            c.ticker.asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
 
     rows = db.execute(stmt).mappings().all()
     return {"total_count": total_count, "items": [dict(r) for r in rows]}
