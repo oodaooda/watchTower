@@ -1,3 +1,16 @@
+Start up...
+
+create database
+creawte tables: python -m ops.create_tables
+
+python -m ops.run_backfill --limit 50docker exec -it wt-pg psql -U postgres -d watchtower -c \
+"UPDATE companies SET is_tracked = TRUE WHERE ticker IN ('AAPL','MSFT','NVDA','GOOGL','AMZN');"
+
+
+python -m ops.recompute_metrics --limit 100
+
+python -m ops.backfill_prices_alpha_vantage --sleep 1
+
 # watchTower
 
 Fundamental analytics backend that ingests **SEC EDGAR** (Inline XBRL) annual fundamentals (up to \~20 years), rolls **prices** to fiscal years, computes value-oriented metrics (P/E, Cash/Debt, Growth Consistency, Piotroski F, Altman Z, CAGR, margins, FCF, leverage), and serves them via a **FastAPI** for a screening UI.
@@ -113,6 +126,33 @@ watchTower/
    ├─ recompute_metrics.py
    └─ rebuild_materialized_views.py
 ```
+
+app/
+  api/
+    main.py                      # FastAPI entry (mounted routers)
+  core/
+    db.py, models.py, schemas.py # SQLAlchemy + Pydantic
+    valuation_engine.py          # DCF helpers (optional)
+  etl/
+    sec_fetch_companyfacts.py    # Pulls SEC facts
+    transform_compute_metrics.py # Build metrics rows
+  routers/
+    companies.py, financials.py, metrics.py
+    screen.py                    # /screen endpoint
+    valuation.py                 # /valuation/dcf, /valuation/summary
+  valuation/
+    dcf.py                       # two-stage DCF (pure function)
+docker/
+  api.Dockerfile, docker-compose.yml
+ops/
+  create_tables.py
+  run_backfill.py                # SEC backfill -> financials_annual
+  backfill_prices_alpha_vantage.py
+  recompute_metrics.py           # compute metrics -> metrics_annual
+ui/
+  src/
+    components/{FilterBar,ResultsTable,ThemeToggle,ValuationModal}.tsx
+    lib/{api.ts,types.ts}
 
 ---
 

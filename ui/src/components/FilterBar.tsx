@@ -17,6 +17,14 @@ const btnPrimary =
   "inline-flex items-center justify-center " +
   "hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30";
 
+// 🔹 helper to allow Enter key to trigger run()
+function handleKeyDown(e: React.KeyboardEvent, action: () => void) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    action();
+  }
+}
+
 export default function FilterBar({ onRun }: Props) {
   // Local UI state; all optional filters
   const [peMax, setPeMax] = useState<number | undefined>(undefined);
@@ -26,6 +34,32 @@ export default function FilterBar({ onRun }: Props) {
   const [niCagr, setNiCagr] = useState<number | undefined>(undefined);
   const [fcfCagr, setFcfCagr] = useState<number | undefined>(undefined); // NEW
   const [industry, setIndustry] = useState<string>("");
+
+  // 🔹 Run handler
+  function run() {
+    onRun({
+      pe_max: peMax,
+      cash_debt_min: cashDebtMin,
+      growth_consistency_min: growthMin,
+      rev_cagr_min: revCagr,
+      ni_cagr_min: niCagr,
+      fcf_cagr_min: fcfCagr,
+      industry: industry || undefined,
+    });
+  }
+
+  // 🔹 Reset handler (re-run with defaults)
+  function reset() {
+    setPeMax(undefined);
+    setCashDebtMin(0.8);
+    setGrowthMin(7);
+    setRevCagr(undefined);
+    setNiCagr(undefined);
+    setFcfCagr(undefined);
+    setIndustry("");
+
+    onRun({ cash_debt_min: 0.8, growth_consistency_min: 7 });
+  }
 
   return (
     <div className="rounded-2xl p-4 mb-4 border border-zinc-200 bg-white shadow-sm
@@ -39,6 +73,7 @@ export default function FilterBar({ onRun }: Props) {
             placeholder="e.g. 20"
             value={peMax ?? ""}
             onChange={(e) => setPeMax(e.target.value ? Number(e.target.value) : undefined)}
+            onKeyDown={(e) => handleKeyDown(e, run)}  
             className={inputCls}
           />
         </div>
@@ -50,6 +85,7 @@ export default function FilterBar({ onRun }: Props) {
             step="0.01"
             value={cashDebtMin ?? ""}
             onChange={(e) => setCashDebtMin(e.target.value ? Number(e.target.value) : undefined)}
+            onKeyDown={(e) => handleKeyDown(e, run)} 
             className={inputCls}
           />
         </div>
@@ -60,6 +96,7 @@ export default function FilterBar({ onRun }: Props) {
             type="number"
             value={growthMin ?? ""}
             onChange={(e) => setGrowthMin(e.target.value ? Number(e.target.value) : undefined)}
+            onKeyDown={(e) => handleKeyDown(e, run)}  
             className={inputCls}
           />
         </div>
@@ -72,6 +109,7 @@ export default function FilterBar({ onRun }: Props) {
             placeholder="0.05 = 5%"
             value={revCagr ?? ""}
             onChange={(e) => setRevCagr(e.target.value ? Number(e.target.value) : undefined)}
+            onKeyDown={(e) => handleKeyDown(e, run)} 
             className={inputCls}
           />
         </div>
@@ -84,11 +122,12 @@ export default function FilterBar({ onRun }: Props) {
             placeholder="0.05 = 5%"
             value={niCagr ?? ""}
             onChange={(e) => setNiCagr(e.target.value ? Number(e.target.value) : undefined)}
+            onKeyDown={(e) => handleKeyDown(e, run)}  
             className={inputCls}
           />
         </div>
 
-        {/* NEW: FCF CAGR filter */}
+    
         <div>
           <label className="text-xs mb-1 block">FCF CAGR 5y ≥</label>
           <input
@@ -97,6 +136,7 @@ export default function FilterBar({ onRun }: Props) {
             placeholder="0.05 = 5%"
             value={fcfCagr ?? ""}
             onChange={(e) => setFcfCagr(e.target.value ? Number(e.target.value) : undefined)}
+            onKeyDown={(e) => handleKeyDown(e, run)}  
             className={inputCls}
           />
         </div>
@@ -108,39 +148,26 @@ export default function FilterBar({ onRun }: Props) {
             placeholder="e.g. Semiconductors"
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
+            onKeyDown={(e) => handleKeyDown(e, run)}   
             className={inputCls}
           />
         </div>
       </div>
+
+      {/* Action buttons */}
       <div className="mt-3 flex gap-2">
         <button
           type="button"
           className={btnPrimary}
-          onClick={() =>
-            onRun({
-              pe_max: peMax,
-              cash_debt_min: cashDebtMin,
-              growth_consistency_min: growthMin,
-              rev_cagr_min: revCagr,
-              ni_cagr_min: niCagr,
-              industry: industry || undefined,
-            })
-          }
+          onClick={run}
         >
           Run screen
         </button>
 
         <button
           type="button"
-          className={btnPrimary}  // <-- same style for Reset
-          onClick={() => {
-            setPeMax(undefined);
-            setCashDebtMin(0.8);
-            setGrowthMin(7);
-            setRevCagr(undefined);
-            setNiCagr(undefined);
-            setIndustry("");
-          }}
+          className={btnPrimary}
+          onClick={reset}
         >
           Reset
         </button>
@@ -149,8 +176,7 @@ export default function FilterBar({ onRun }: Props) {
   );
 }
 
-
-
+// ---- shared CSS for inputs ----
 const inputCls =
   "w-full h-9 rounded-md px-3 border bg-white text-zinc-900 placeholder-zinc-500 " +
   "focus:outline-none focus:ring-2 focus:ring-sky-500/30 " +

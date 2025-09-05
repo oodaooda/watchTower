@@ -1,23 +1,17 @@
 """Financials router
 
-Exposes company-level **annual raw fundamentals** as stored in `financials_annual`.
-This is the source-of-truth view for revenue, net income, cash & short-term
-investments, total debt, and diluted shares (one row per fiscal year).
+Returns company-level **annual raw fundamentals** as stored in `financials_annual`,
+expanded for UI-friendly Financials tabs: Income Statement, Balance Sheet, Cash Flow.
 
-How it works:
-- The endpoint takes a `company_id` (DB PK), queries all rows for that company,
-  orders them by `fiscal_year`, and returns a list of Pydantic models.
-- Numbers are returned as floats (or `null`) for frontend-friendliness.
-- If the company has no rows yet (e.g., not ingested), it returns an empty list
-  rather than 404 (since the company may exist but data is pending).
-
-Design notes:
-- We keep this endpoint *raw* and free of derived metrics. Anything computed
-  belongs in `/metrics`.
-- Provenance (tag/unit/accession) is not exposed here—query the provenance table
-  by `financial_id` if you need audit details in the future.
+Notes:
+- We coalesce alternate column names (e.g., operating_cash_flow → cfo) to
+  tolerate minor schema drift without migrations.
+- We compute:
+    * FCF  = CFO - CapEx   (when both present)
+    * EPS  = Net Income / Shares Outstanding (proxy if diluted not available)
 """
-from typing import List
+from __future__ import annotations
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Path
 from sqlalchemy import select
@@ -29,17 +23,20 @@ from app.core.schemas import FinancialAnnualOut
 
 router = APIRouter()
 
+def _num(v: Optional[object]) -> Optional[float]:
+    return float(v) if v is not None else None
+
+def _coalesce(*vals):
+    for v in vals:
+        if v is not None:
+            return v
+    return None
 
 @router.get("/{company_id}", response_model=List[FinancialAnnualOut])
 def company_financials(
     company_id: int = Path(..., description="Numeric company primary key (companies.id)"),
     db: Session = Depends(get_db),
 ):
-    """Return **all annual raw fundamentals** for a given company.
-
-    Each item corresponds to a fiscal year. Values may be `null` if a tag is
-    missing for that year (we do not zero-fill).
-    """
     stmt = (
         select(FinancialAnnual)
         .where(FinancialAnnual.company_id == company_id)
@@ -47,17 +44,55 @@ def company_financials(
     )
     rows = db.scalars(stmt).all()
 
-    # Map ORM rows to API schema, coercing Decimals to float for JSON.
     out: List[FinancialAnnualOut] = []
     for r in rows:
+        # --- Income Statement ---
+        revenue           = _num(getattr(r, "revenue", None))
+        gross_profit      = _num(getattr(r, "gross_profit", None))          # may not exist in table → None
+        operating_income  = _num(getattr(r, "operating_income", None))      # may not exist in table → None
+        net_income        = _num(getattr(r, "net_income", None))
+
+        # Shares (diluted not explicitly modeled; use shares_outstanding proxy)
+        shares_outstanding = _num(getattr(r, "shares_outstanding", None))
+        eps_diluted = None
+        if net_income is not None and shares_outstanding and shares_outstanding > 0:
+            eps_diluted = net_income / shares_outstanding
+
+        # --- Balance Sheet ---
+        assets_total  = _num(getattr(r, "assets_total", None))              # may not exist in table → None
+        equity_total  = _num(getattr(r, "equity_total", None))              # may not exist in table → None
+        cash_and_sti  = _num(getattr(r, "cash_and_sti", None))
+        total_debt    = _num(getattr(r, "total_debt", None))
+
+        # --- Cash Flow (coalesce supported column names) ---
+        cfo_val   = _coalesce(getattr(r, "cfo", None), getattr(r, "operating_cash_flow", None))
+        capex_val = _coalesce(getattr(r, "capex", None), getattr(r, "capital_expenditures", None))
+        cfo  = _num(cfo_val)
+        capex = _num(capex_val)
+        fcf = (cfo - capex) if (cfo is not None and capex is not None) else None
+
         out.append(
             FinancialAnnualOut(
-                fiscal_year=r.fiscal_year,
-                revenue=float(r.revenue) if r.revenue is not None else None,
-                net_income=float(r.net_income) if r.net_income is not None else None,
-                cash_and_sti=float(r.cash_and_sti) if r.cash_and_sti is not None else None,
-                total_debt=float(r.total_debt) if r.total_debt is not None else None,
-                shares_diluted=float(r.shares_diluted) if r.shares_diluted is not None else None,
+                fiscal_year=int(r.fiscal_year),
+
+                # Income Statement
+                revenue=revenue,
+                gross_profit=gross_profit,
+                operating_income=operating_income,
+                net_income=net_income,
+                eps_diluted=eps_diluted,
+
+                # Balance Sheet
+                assets_total=assets_total,
+                equity_total=equity_total,
+                cash_and_sti=cash_and_sti,
+                total_debt=total_debt,
+                shares_outstanding=shares_outstanding,
+
+                # Cash Flow
+                cfo=cfo,
+                capex=capex,
+                fcf=fcf,
             )
         )
 

@@ -8,11 +8,13 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Core
-    database_url: str = Field(
-        "postgresql+psycopg2://postgres:postgres@localhost:5432/watchtower",
-        alias="DATABASE_URL",
-        description="SQLAlchemy DB URL",
-    )
+    database_url: str
+    alpha_vantage_api_key: str | None = None
+    sec_user_agent: str
+
+    class Config:
+        env_file = ".env"            # <- load from repo root
+        env_file_encoding = "utf-8"
     timezone: str = Field("America/New_York", alias="TIMEZONE")
 
     # External services

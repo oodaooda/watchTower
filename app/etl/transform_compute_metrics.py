@@ -54,19 +54,30 @@ def yoy(series: List[Optional[float]]) -> List[Optional[float]]:
 
 
 def cagr(series: List[Optional[float]], years: int) -> Optional[float]:
-    """Compute trailing CAGR over `years` using the **last available** non-null
-    values spaced `years` apart.
-
-    Example: if `years=5`, we need at least 6 valid points (t-5 .. t).
+    """Compute trailing CAGR over `years` using the earliest and latest
+    available non-null values at least `years` apart.
     """
-    # Filter to non-null values keeping order
-    vals = [v for v in series if v is not None]
-    if len(vals) < years + 1:
+    if len(series) < years + 1:
         return None
-    start, end = vals[-(years + 1)], vals[-1]
-    if start is None or end is None or start <= 0:
+
+    # Find last index with a value
+    end_idx = None
+    for i in range(len(series) - 1, -1, -1):
+        if series[i] is not None and series[i] > 0:
+            end_idx = i
+            break
+    if end_idx is None:
         return None
-    return (end / start) ** (1 / years) - 1
+
+    start_idx = end_idx - years
+    if start_idx < 0 or series[start_idx] is None or series[start_idx] <= 0:
+        return None
+
+    try:
+        return (series[end_idx] / series[start_idx]) ** (1 / years) - 1
+    except Exception:
+        return None
+
 
 
 def growth_consistency(
@@ -166,15 +177,13 @@ def build_metrics_rows(
     total_debt: List[Optional[float]],
     ttm_eps: List[Optional[float]] | None = None,
 ) -> List[Dict[str, Optional[float]]]:
-    """Given aligned series, compute a minimal set of metrics per fiscal year.
+    """Compute per-year metrics; always return one row per fiscal year.
 
-    Assumes all lists are aligned by index to the same `fiscal_years`.
-    Returns a list of dicts ready to upsert into `metrics_annual`.
+    Missing inputs produce None for that metric, but the row is still emitted.
     """
     n = len(fiscal_years)
     out: List[Dict[str, Optional[float]]] = []
 
-    # Pre-compute series-level items used across rows
     rev_yoy_list = yoy(revenue)
     ni_yoy_list = yoy(net_income)
 
@@ -190,12 +199,17 @@ def build_metrics_rows(
             "ni_yoy": ni_yoy_list[i] if i < len(ni_yoy_list) else None,
             "rev_cagr_5y": cagr(revenue[: i + 1], 5),
             "ni_cagr_5y": cagr(net_income[: i + 1], 5),
-            "growth_consistency": growth_consistency(revenue[: i + 1], net_income[: i + 1], window=10),
+            "growth_consistency": growth_consistency(
+                revenue[: i + 1], net_income[: i + 1], window=10
+            ),
             "ttm_eps": ttm_eps[i] if (ttm_eps and i < len(ttm_eps)) else None,
         }
+
+        # ✅ Always append row (don’t skip if mostly None)
         out.append(row)
 
     return out
+
 
 
 __all__ = [

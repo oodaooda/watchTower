@@ -38,6 +38,7 @@ from typing import Dict, Any, List
 import datetime as dt
 
 import requests
+from sqlalchemy import literal
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -114,7 +115,7 @@ def upsert_companies(data: Dict[str, Any]) -> None:
     db: Session = SessionLocal()
     try:
         # Chunk to keep parameter lists reasonable
-        chunk_sz = 2000
+        chunk_sz = 500
         total = 0
         for i in range(0, len(rows), chunk_sz):
             chunk = rows[i : i + chunk_sz]
@@ -124,7 +125,7 @@ def upsert_companies(data: Dict[str, Any]) -> None:
                 set_={
                     "ticker": stmt.excluded.ticker,
                     "name": stmt.excluded.name,
-                    "status": "active",
+                    "status": stmt.excluded.status,   # ✅ use the insert row’s value
                 },
             )
             db.execute(stmt)
@@ -133,6 +134,7 @@ def upsert_companies(data: Dict[str, Any]) -> None:
         print(f"[watchTower] Upserted {total} companies (deduped by CIK).")
     finally:
         db.close()
+
 
 
 def main() -> None:

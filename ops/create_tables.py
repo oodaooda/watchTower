@@ -22,9 +22,9 @@ from app.core import models  # noqa: F401  (imported for side effects)
 
 
 def main() -> None:
-    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        Base.metadata.create_all(bind=conn)
     print("[watchTower] Tables created (or already exist).")
-
 
 if __name__ == "__main__":
     main()

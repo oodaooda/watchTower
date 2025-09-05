@@ -1,280 +1,165 @@
-// ui/src/components/ValuationModal.tsx
-import React, { useEffect, useState } from "react";
-import { fetchDCF, type DCFResponse } from "../lib/api";
+// ui/src/components/ResultsTable.tsx
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import type { ScreenRow } from "../types";
+import ValuationModal from "./ValuationModal";
 
-export default function ValuationModal({
-  ticker,
-  onClose,
+type RowWithVal = ScreenRow & {
+  fair_value_per_share?: number | null;
+  upside_vs_price?: number | null;
+};
+
+function fmtPct(v?: number | null) {
+  if (v == null || Number.isNaN(v)) return "—";
+  return (v * 100).toFixed(1) + "%";
+}
+function fmtNum(v?: number | null) {
+  if (v == null || Number.isNaN(v)) return "—";
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(v);
+}
+
+export default function ResultsTable({
+  rows,
+  loading,
 }: {
-  ticker: string;
-  onClose: () => void;
+  rows: RowWithVal[];
+  loading: boolean;
 }) {
-  // inputs
-  const [years, setYears] = useState(10);
-  const [dr, setDr] = useState(0.1);
-  const [g0, setG0] = useState<number | undefined>(undefined);
-  const [gt, setGt] = useState(0.025);
-
-  const [data, setData] = useState<DCFResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function run() {
-    try {
-      setLoading(true);
-      setErr(null);
-      const out = await fetchDCF({
-        ticker,
-        years,
-        discount_rate: dr,
-        start_growth: g0,
-        terminal_growth: gt,
-      });
-      if (g0 == null) setG0(out.inputs?.start_growth ?? g0);
-      // Keep using your original top-level fields for rendering:
-      setData(out);
-    } catch (e: any) {
-      setErr(e?.message ?? "error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker]);
+  const [openTicker, setOpenTicker] = useState<string | null>(null);
+  const hasData = rows.length > 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-6 md:p-10"
-      role="dialog"
-      aria-modal="true"
-    >
-      {/* overlay */}
-      <div
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+    <>
+      <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
+        <table className="min-w-full text-sm">
+          <thead className="bg-zinc-50 dark:bg-zinc-900/60">
+            <tr>
+              <th className="text-left px-4 py-3 font-semibold">Ticker</th>
+              <th className="text-left px-4 py-3 font-semibold">Company</th>
+              <th className="text-left px-4 py-3 font-semibold">Industry</th>
+              <th className="text-right px-4 py-3 font-semibold">FY</th>
+              <th className="text-right px-4 py-3 font-semibold">Price</th>
+              {/* Restored valuation summary columns */}
+              <th className="text-right px-4 py-3 font-semibold">Fair Value</th>
+              <th className="text-right px-4 py-3 font-semibold">Upside</th>
+              <th className="text-right px-4 py-3 font-semibold">P/E (TTM)</th>
+              <th className="text-right px-4 py-3 font-semibold">Cash/Debt</th>
+              <th className="text-right px-4 py-3 font-semibold">Growth Cons.</th>
+              <th className="text-right px-4 py-3 font-semibold">Rev CAGR (5y)</th>
+              <th className="text-right px-4 py-3 font-semibold">NI CAGR (5y)</th>
+              <th className="text-right px-4 py-3 font-semibold">FCF CAGR (5y)</th>
+              <th className="text-right px-4 py-3 font-semibold">Valuation</th>
+            </tr>
+          </thead>
 
-      {/* sheet */}
-      <div className="relative w-full max-w-3xl rounded-2xl bg-white text-gray-900 shadow-xl dark:bg-gray-900 dark:text-gray-100 dark:shadow-black/30">
-        {/* header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold">DCF — {ticker}</h2>
-          <button
-            className="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
+          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {loading && (
+              <tr>
+                <td colSpan={14} className="px-4 py-4 text-zinc-500">
+                  Loading…
+                </td>
+              </tr>
+            )}
 
-        {/* content */}
-        <div className="px-5 py-4">
-          {/* controls */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
-            <LabeledInput
-              label="Years"
-              value={years}
-              onChange={(v) => setYears(v)}
-              min={3}
-              max={20}
-            />
-            <LabeledInput
-              label="Discount rate"
-              value={dr}
-              onChange={(v) => setDr(v)}
-              step={0.005}
-            />
-            <LabeledInput
-              label="Start growth"
-              value={g0 ?? NaN}
-              onChange={(v) => setG0(Number.isNaN(v) ? undefined : v)}
-              step={0.005}
-              placeholder="auto"
-              allowEmpty
-            />
-            <LabeledInput
-              label="Terminal growth"
-              value={gt}
-              onChange={(v) => setGt(v)}
-              step={0.001}
-            />
-          </div>
+            {!loading && !hasData && (
+              <tr>
+                <td colSpan={14} className="px-4 py-4 text-zinc-500">
+                  No results.
+                </td>
+              </tr>
+            )}
 
-          <div className="mb-4">
-            <button
-              className="rounded-md bg-gray-900 px-3 py-1.5 text-white hover:bg-black disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-500"
-              onClick={run}
-              disabled={loading}
-            >
-              {loading ? "Computing…" : "Recalculate"}
-            </button>
-          </div>
-
-          {err && (
-            <div className="mb-3 text-sm text-red-600 dark:text-red-400">
-              {err}
-            </div>
-          )}
-
-          {data && (
-            <div className="space-y-4">
-              {/* headline stats */}
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Stat
-                  label="Base FCF"
-                  value={`$${(data.base_fcf / 1e9).toFixed(2)} bn`}
-                />
-                <Stat
-                  label="Enterprise Value"
-                  value={`$${(data.enterprise_value / 1e9).toFixed(2)} bn`}
-                />
-                <Stat
-                  label="Equity Value"
-                  value={`$${(data.equity_value / 1e9).toFixed(2)} bn`}
-                />
-                <Stat
-                  label="Fair Value / Share"
-                  value={
-                    data.fair_value_per_share != null
-                      ? `$${data.fair_value_per_share.toFixed(2)}`
-                      : "—"
-                  }
-                />
-              </div>
-
-              {/* price / fair value / upside */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Card label="Price" value={data.price != null ? `$${data.price.toFixed(2)}` : "—"} />
-                <Card
-                  label="Fair Value / Share"
-                  value={
-                    data.fair_value_per_share != null
-                      ? `$${data.fair_value_per_share.toFixed(2)}`
-                      : "—"
-                  }
-                />
-                <Card
-                  label="Upside vs Price"
-                  value={
-                    data.upside_vs_price != null
-                      ? `${(data.upside_vs_price * 100).toFixed(1)}%`
-                      : "—"
-                  }
-                  valueClass={
-                    data.upside_vs_price != null && data.upside_vs_price >= 0
-                      ? "text-emerald-600"
-                      : "text-rose-600"
-                  }
-                />
-              </div>
-
-              {/* table */}
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="text-left border-b border-gray-200 dark:border-gray-700">
-                      <th className="py-2 pr-3">Year</th>
-                      <th className="py-2 pr-3">FCF</th>
-                      <th className="py-2 pr-3">Growth</th>
-                      <th className="py-2 pr-3">PV of FCF</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.projections.map((row) => (
-                      <tr
-                        key={row.year}
-                        className="border-b border-gray-200 dark:border-gray-700 odd:bg-gray-50 dark:odd:bg-gray-800/40"
+            {!loading &&
+              hasData &&
+              rows.map((r) => {
+                const secUrl = `https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(
+                  r.ticker
+                )}`;
+                return (
+                  <tr
+                    key={`${r.company_id}-${r.fiscal_year}`}
+                    className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+                  >
+                    {/* Ticker → SEC */}
+                    <td className="px-4 py-2 font-mono">
+                      <a
+                        href={secUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-700 dark:text-sky-400 hover:underline"
+                        title="Open SEC filings"
                       >
-                        <td className="py-2 pr-3">{row.year}</td>
-                        <td className="py-2 pr-3">${(row.fcf / 1e9).toFixed(2)} bn</td>
-                        <td className="py-2 pr-3">{(row.growth * 100).toFixed(1)}%</td>
-                        <td className="py-2 pr-3">${(row.pv_fcf / 1e9).toFixed(2)} bn</td>
-                      </tr>
-                    ))}
-                    <tr className="font-semibold">
-                      <td className="py-2 pr-3">Terminal (PV)</td>
-                      <td className="py-2 pr-3">—</td>
-                      <td className="py-2 pr-3">—</td>
-                      <td className="py-2 pr-3">
-                        ${ (data.terminal_value_pv / 1e9).toFixed(2) } bn
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
+                        {r.ticker}
+                      </a>
+                    </td>
+
+                    {/* Company → Financials */}
+                    <td className="px-4 py-2">
+                      <Link
+                        to={`/financials/${r.company_id}`}
+                        className="text-sky-700 dark:text-sky-400 hover:underline"
+                        title="View Financials"
+                      >
+                        {r.name}
+                      </Link>
+                    </td>
+
+                    <td className="px-4 py-2">{r.industry ?? "—"}</td>
+                    <td className="px-4 py-2 text-right">{r.fiscal_year}</td>
+                    <td className="px-4 py-2 text-right">{fmtNum(r.price)}</td>
+
+                    {/* Restored Fair Value / Upside (from /valuation/summary merge in App.tsx) */}
+                    <td className="px-4 py-2 text-right">
+                      {fmtNum(r.fair_value_per_share)}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {fmtPct(r.upside_vs_price ?? null)}
+                    </td>
+
+                    <td className="px-4 py-2 text-right">{r.pe_ttm ?? "—"}</td>
+                    <td className="px-4 py-2 text-right">
+                      {r.cash_debt_ratio?.toFixed(2) ?? "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {r.growth_consistency ?? "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {fmtPct(r.rev_cagr_5y)}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {fmtPct(r.ni_cagr_5y)}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {fmtPct(r.fcf_cagr_5y)}
+                    </td>
+
+                    {/* Valuation modal trigger (uses your existing ValuationModal) */}
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        onClick={() => setOpenTicker(r.ticker)}
+                        className="text-sky-700 dark:text-sky-400 hover:underline"
+                        title="Open DCF"
+                      >
+                        Valuation
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
       </div>
-    </div>
-  );
-}
 
-function LabeledInput({
-  label,
-  value,
-  onChange,
-  step,
-  min,
-  max,
-  placeholder,
-  allowEmpty = false,
-}: {
-  label: string;
-  value: number; // can be NaN if allowEmpty
-  onChange: (v: number) => void;
-  step?: number;
-  min?: number;
-  max?: number;
-  placeholder?: string;
-  allowEmpty?: boolean;
-}) {
-  const str = Number.isNaN(value) && allowEmpty ? "" : String(value);
-  return (
-    <label className="text-sm">
-      <span className="mb-1 block text-gray-600 dark:text-gray-300">{label}</span>
-      <input
-        type="number"
-        value={str}
-        step={step}
-        min={min}
-        max={max}
-        placeholder={placeholder}
-        onChange={(e) =>
-          onChange(e.target.value === "" && allowEmpty ? NaN : Number(e.target.value))
-        }
-        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-gray-900 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-blue-400/40"
-      />
-    </label>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-      <div className="text-xs text-gray-600 dark:text-gray-300">{label}</div>
-      <div className="text-base font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function Card({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
-      <div className="text-xs text-gray-600 dark:text-gray-300">{label}</div>
-      <div className={`text-xl font-semibold ${valueClass ?? ""}`}>{value}</div>
-    </div>
+      {/* Your existing DCF modal */}
+      {openTicker && (
+        <ValuationModal
+          ticker={openTicker}
+          onClose={() => setOpenTicker(null)}
+        />
+      )}
+    </>
   );
 }

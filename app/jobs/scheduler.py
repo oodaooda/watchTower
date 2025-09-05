@@ -23,18 +23,35 @@ Notes
 - Use structured logging so you can trace runs in production.
 """
 from __future__ import annotations
-
+from typing import Optional
+import threading
 import logging
-
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from fastapi import APIRouter, HTTPException
 
 log = logging.getLogger(__name__)
+
+# ----------------------------
+# Manual Run
+# ----------------------------
+
+SCHED: Optional[BackgroundScheduler] = None
+STOP_EVENT = threading.Event()
 
 
 # -----------------------------
 # Job functions (stubs)
 # -----------------------------
+
+def cancel_jobs():
+    """Set a kill switch that your long-running loops can check."""
+    STOP_EVENT.set()
+
+def get_scheduler() -> Optional[BackgroundScheduler]:
+    return SCHED
+
+
 
 def nightly_fundamentals_job() -> None:
     """Placeholder: pull EDGAR fundamentals for tracked companies.
@@ -91,3 +108,64 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
     sched.start()
     log.info("[jobs] scheduler started with timezone=%s", tz)
     return sched
+
+
+# ------------- DEV ROUTER (lives in this file) -------------
+dev_router = APIRouter(prefix="/_jobs", tags=["_dev"])
+
+@dev_router.get("")
+def list_jobs():
+    sched = get_scheduler()
+    if not sched:
+        raise HTTPException(status_code=503, detail="scheduler not running")
+    out = []
+    for j in sched.get_jobs():
+        out.append({
+            "id": j.id,
+            "next_run": j.next_run_time.isoformat() if j.next_run_time else None,
+            "trigger": str(j.trigger),
+        })
+    return out
+
+@dev_router.post("/pause/{job_id}")
+def pause(job_id: str):
+    sched = get_scheduler()
+    if not sched: raise HTTPException(503, "scheduler not running")
+    sched.pause_job(job_id)
+    return {"paused": job_id}
+
+@dev_router.post("/resume/{job_id}")
+def resume(job_id: str):
+    sched = get_scheduler()
+    if not sched: raise HTTPException(503, "scheduler not running")
+    sched.resume_job(job_id)
+    return {"resumed": job_id}
+
+@dev_router.post("/remove/{job_id}")
+def remove(job_id: str):
+    sched = get_scheduler()
+    if not sched: raise HTTPException(503, "scheduler not running")
+    sched.remove_job(job_id)
+    return {"removed": job_id}
+
+@dev_router.post("/shutdown")
+def shutdown_sched():
+    sched = get_scheduler()
+    if not sched: return {"ok": True, "note": "scheduler not running"}
+    sched.shutdown(wait=False)
+    return {"ok": True}
+
+@dev_router.post("/cancel")
+def cancel_inflight():
+    cancel_jobs()
+    return {"ok": True}
+
+@dev_router.post("/run/nightly")
+def run_nightly_now():
+    nightly_fundamentals_job()
+    return {"ok": True}
+
+@dev_router.post("/run/prices")
+def run_prices_now():
+    daily_prices_job()
+    return {"ok": True}

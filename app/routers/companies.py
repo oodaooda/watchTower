@@ -1,40 +1,50 @@
-from typing import List, Optional
-
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+# app/routers/companies.py
+from fastapi import APIRouter, Query, Depends
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
-
+from typing import Optional, Dict, Any
 from app.core.db import get_db
 from app.core.models import Company
-from app.core.schemas import CompanyOut
 
-router = APIRouter()
+router = APIRouter(prefix="/companies", tags=["companies"])
 
-
-@router.get("", response_model=List[CompanyOut])
+@router.get("")
 def list_companies(
-    q: Optional[str] = Query(default=None, description="Search by ticker or name"),
-    industry: Optional[str] = Query(default=None, description="Exact industry match"),
-    limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    industry: Optional[str] = Query(None),
+    sic: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, description="search ticker or name (ilike)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
     db: Session = Depends(get_db),
-):
-    """List/search tracked companies.
-
-    Filters:
-      - q: substring match on ticker OR name
-      - industry: exact match on `industry_name`
-    Pagination via limit/offset.
-    """
-    stmt = select(Company).where(Company.is_tracked == True)
-
+) -> Dict[str, Any]:
+    base = select(Company).where(Company.is_tracked.is_(True))
+    if industry:
+        base = base.where(Company.industry_name == industry)
+    if sic:
+        base = base.where(Company.sic == sic)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where((Company.ticker.ilike(like)) | (Company.name.ilike(like)))
+        base = base.where(or_(Company.ticker.ilike(like), Company.name.ilike(like)))
 
-    if industry:
-        stmt = stmt.where(Company.industry_name == industry)
+    total = db.scalar(select(func.count()).select_from(base.subquery()))
+    rows = db.scalars(
+        base.order_by(Company.ticker.asc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+    ).all()
 
-    stmt = stmt.order_by(Company.ticker).limit(limit).offset(offset)
-    rows = db.scalars(stmt).all()
-    return rows
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total or 0,
+        "items": [
+            {
+                "id": co.id,
+                "ticker": co.ticker,
+                "name": co.name,
+                "industry": co.industry_name,
+                "sic": co.sic,
+            }
+            for co in rows
+        ],
+    }

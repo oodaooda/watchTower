@@ -9,6 +9,7 @@ Tables:
 - fact_provenance
 """
 from __future__ import annotations
+from sqlalchemy.sql import func
 
 from datetime import datetime, date
 from sqlalchemy import (
@@ -23,15 +24,13 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     Column,
-    PrimaryKeyConstraint,
-)
-from sqlalchemy.orm import Mapped, mapped_column, declarative_base, relationship
+    PrimaryKeyConstraint,    
+    )
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 
 
 from app.core.db import Base
-
-
-Base = declarative_base()
 
 class Company(Base):
     __tablename__ = "companies"
@@ -49,7 +48,7 @@ class Company(Base):
     is_tracked = Column(Boolean, default=False)
     track_reason = Column(String, nullable=True)
     tracked_since = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
 
@@ -89,20 +88,24 @@ class FinancialAnnual(Base):
 
 
 
+# app/core/models.py
+from sqlalchemy import Column, Integer, ForeignKey, Numeric, String, UniqueConstraint, Float
+
 class PriceAnnual(Base):
     __tablename__ = "prices_annual"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)   
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
-    fiscal_year = Column(Integer, nullable=False)
-
+    fiscal_year = Column(Integer, nullable=False, index=True)
     close_price = Column(Numeric(20, 4))
+    eps = Column(Float) 
     pe_ttm = Column(Numeric(20, 4))
     source = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint("company_id", "fiscal_year", name="pk_prices_annual_company_year"),
+        UniqueConstraint("company_id", "fiscal_year", name="uq_prices_annual_company_year"),
     )
+
 
 
 

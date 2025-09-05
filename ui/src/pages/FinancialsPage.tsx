@@ -1,0 +1,149 @@
+// ui/src/pages/FinancialsPage.tsx
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+
+type Row = {
+  fiscal_year: number;
+
+  // Income Statement
+  revenue?: number | null;
+  gross_profit?: number | null;
+  operating_income?: number | null;
+  net_income?: number | null;
+  eps_diluted?: number | null;
+
+  // Balance Sheet
+  assets_total?: number | null;
+  equity_total?: number | null;
+  cash_and_sti?: number | null;
+  total_debt?: number | null;
+  shares_outstanding?: number | null;
+
+  // Cash Flow
+  cfo?: number | null;
+  capex?: number | null;
+  fcf?: number | null;
+};
+
+const API = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+
+const tabBtn =
+  "h-9 px-4 rounded-xl font-medium inline-flex items-center justify-center " +
+  "bg-zinc-900 text-white dark:bg-zinc-200 dark:text-zinc-900 " +
+  "hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-sky-500/30";
+
+function formatNum(v?: number | null, opts: Intl.NumberFormatOptions = {}) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const fmt = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2, ...opts });
+  return fmt.format(v);
+}
+
+export default function FinancialsPage() {
+  const { companyId } = useParams<{ companyId: string }>();
+  const navigate = useNavigate();
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<"IS" | "BS" | "CF">("IS");
+
+  useEffect(() => {
+    if (!companyId) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(`${API}/financials/${companyId}`);
+        const data: Row[] = await r.json();
+        if (alive) setRows(data || []);
+      } catch {
+        if (alive) setRows([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [companyId]);
+
+  const fiscalYears = useMemo(() => rows.map(r => r.fiscal_year), [rows]);
+
+  const isItems = [
+    { key: "revenue", label: "Revenue", fmt: (v: number | null | undefined) => formatNum(v) },
+    { key: "gross_profit", label: "Gross Profit", fmt: formatNum },
+    { key: "operating_income", label: "Operating Income", fmt: formatNum },
+    { key: "net_income", label: "Net Income", fmt: formatNum },
+    { key: "eps_diluted", label: "EPS (Diluted, proxy)", fmt: (v: number | null | undefined) => formatNum(v, { notation: "standard", maximumFractionDigits: 2 }) },
+  ] as const;
+
+  const bsItems = [
+    { key: "assets_total", label: "Total Assets", fmt: formatNum },
+    { key: "equity_total", label: "Total Equity", fmt: formatNum },
+    { key: "cash_and_sti", label: "Cash & STI", fmt: formatNum },
+    { key: "total_debt", label: "Total Debt", fmt: formatNum },
+    { key: "shares_outstanding", label: "Shares Outstanding", fmt: (v: number | null | undefined) => formatNum(v, { notation: "standard", maximumFractionDigits: 0 }) },
+  ] as const;
+
+  const cfItems = [
+    { key: "cfo", label: "Cash From Operations (CFO)", fmt: formatNum },
+    { key: "capex", label: "Capital Expenditures (CapEx)", fmt: formatNum },
+    { key: "fcf", label: "Free Cash Flow (FCF)", fmt: formatNum },
+  ] as const;
+
+  const currentItems =
+    tab === "IS" ? isItems :
+    tab === "BS" ? bsItems : cfItems;
+
+  return (
+    <div className="max-w-6xl mx-auto p-4 space-y-4">
+      {/* Back to Screener */}
+      <div className="flex items-center justify-between">
+        <button
+          className={tabBtn}
+          onClick={() => navigate("/")}
+          aria-label="Back to Screener"
+          title="Back to Screener"
+        >
+          ← Back to Screener
+        </button>
+        <div className="flex items-center gap-2">
+          <button className={tabBtn + (tab === "IS" ? " ring-2 ring-sky-500/30" : "")} onClick={() => setTab("IS")}>Income Statement</button>
+          <button className={tabBtn + (tab === "BS" ? " ring-2 ring-sky-500/30" : "")} onClick={() => setTab("BS")}>Balance Sheet</button>
+          <button className={tabBtn + (tab === "CF" ? " ring-2 ring-sky-500/30" : "")} onClick={() => setTab("CF")}>Cash Flow</button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-zinc-500">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-sm text-zinc-500">No financials yet.</div>
+      ) : (
+        <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <table className="min-w-full text-sm">
+            <thead className="bg-zinc-50 dark:bg-zinc-900/60">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold sticky left-0 bg-zinc-50 dark:bg-zinc-900/60">Line Item</th>
+                {fiscalYears.map((y) => (
+                  <th key={y} className="text-right px-4 py-3 font-semibold">{y}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {currentItems.map((item) => (
+                <tr key={item.key as string}>
+                  <td className="px-4 py-2 sticky left-0 bg-white dark:bg-zinc-950">{item.label}</td>
+                  {rows.map((r) => {
+                    const raw = (r as any)[item.key];
+                    return (
+                      <td key={`${item.key}-${r.fiscal_year}`} className="px-4 py-2 text-right">
+                        {item.fmt(raw)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
