@@ -1,7 +1,9 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import App from "./App";
+import AppShell from "./pages/AppShell";
+//import  from "./App";                      // your screener-with-data
+import Screener from "./pages/Screener";
 import CompaniesPage from "./pages/Companies";
 import FinancialsPage from "./pages/FinancialsPage";
 import "./index.css";
@@ -10,18 +12,19 @@ createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        {/* Screener as the home route */}
-        <Route path="/" element={<App />} />
-        <Route path="/screener" element={<App />} />
+        {/* Layout that shows header + ThemeToggle for every page */}
+        <Route path="/" element={<AppShell />}>
 
-        {/* Companies page (your existing page) */}
-        <Route path="/companies" element={<CompaniesPage />} />
+          {/* Home: Screener (fetches data) */}
+          <Route index element={<Screener />} />
 
-        {/* New: Financials page by numeric company id */}
-        <Route path="/financials/:companyId" element={<FinancialsPage />} />
+          {/* Other pages (relative paths, no leading slash) */}
+          <Route path="companies" element={<CompaniesPage />} />
+          <Route path="financials/:companyId" element={<FinancialsPage />} />
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   </React.StrictMode>
