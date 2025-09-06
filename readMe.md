@@ -1,15 +1,34 @@
-Start up...
+# Start up and intial setup
 
 create database
-creawte tables: python -m ops.create_tables
+create tables: python -m ops.create_tables
 
+# Add see file instructions here (Contains list of all stocks tickers/cik)
+
+# For testing
 python -m ops.run_backfill --limit 50docker exec -it wt-pg psql -U postgres -d watchtower -c \
 "UPDATE companies SET is_tracked = TRUE WHERE ticker IN ('AAPL','MSFT','NVDA','GOOGL','AMZN');"
 
-
+# Recompute Metrics
 python -m ops.recompute_metrics --limit 100
 
+# Back fill prices
 python -m ops.backfill_prices_alpha_vantage --sleep 1
+
+# Populate industry_name
+PYTHONPATH=. python -m ops.backfill_industries --force --only-tracked --sleep .5
+
+# Start Website / Server (Code Here)
+
+# Modify database example: 
+docker exec -it wt-pg psql -U postgres -d watchtower -c "
+SELECT ticker, sic, industry_name
+FROM companies
+ORDER BY ticker
+LIMIT 20;"
+
+
+
 
 # watchTower
 

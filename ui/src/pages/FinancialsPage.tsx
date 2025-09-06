@@ -27,7 +27,7 @@ type Row = {
 
 const API = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
-const tabBtn =
+const btn =
   "h-9 px-4 rounded-xl font-medium inline-flex items-center justify-center " +
   "bg-zinc-900 text-white dark:bg-zinc-200 dark:text-zinc-900 " +
   "hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-sky-500/30";
@@ -44,7 +44,6 @@ export default function FinancialsPage() {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"IS" | "BS" | "CF">("IS");
 
   useEffect(() => {
     if (!companyId) return;
@@ -61,54 +60,75 @@ export default function FinancialsPage() {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [companyId]);
 
-  const fiscalYears = useMemo(() => rows.map(r => r.fiscal_year), [rows]);
+  const fiscalYears = useMemo(
+    () => [...new Set(rows.map((r) => r.fiscal_year))].sort((a, b) => a - b),
+    [rows]
+  );
 
-  const isItems = [
-    { key: "revenue", label: "Revenue", fmt: (v: number | null | undefined) => formatNum(v) },
-    { key: "gross_profit", label: "Gross Profit", fmt: formatNum },
-    { key: "operating_income", label: "Operating Income", fmt: formatNum },
-    { key: "net_income", label: "Net Income", fmt: formatNum },
-    { key: "eps_diluted", label: "EPS (Diluted, proxy)", fmt: (v: number | null | undefined) => formatNum(v, { notation: "standard", maximumFractionDigits: 2 }) },
-  ] as const;
-
-  const bsItems = [
-    { key: "assets_total", label: "Total Assets", fmt: formatNum },
-    { key: "equity_total", label: "Total Equity", fmt: formatNum },
-    { key: "cash_and_sti", label: "Cash & STI", fmt: formatNum },
-    { key: "total_debt", label: "Total Debt", fmt: formatNum },
-    { key: "shares_outstanding", label: "Shares Outstanding", fmt: (v: number | null | undefined) => formatNum(v, { notation: "standard", maximumFractionDigits: 0 }) },
-  ] as const;
-
-  const cfItems = [
-    { key: "cfo", label: "Cash From Operations (CFO)", fmt: formatNum },
-    { key: "capex", label: "Capital Expenditures (CapEx)", fmt: formatNum },
-    { key: "fcf", label: "Free Cash Flow (FCF)", fmt: formatNum },
-  ] as const;
-
-  const currentItems =
-    tab === "IS" ? isItems :
-    tab === "BS" ? bsItems : cfItems;
+  // One combined config: Income Statement + Cash Flow + Balance Sheet
+  const sections: Array<{
+    title: string;
+    lines: Array<{
+      key: keyof Row | "eps_diluted_fmt" | "shares_outstanding_fmt";
+      label: string;
+      fmt?: (v?: number | null) => string;
+    }>;
+  }> = [
+    {
+      title: "Income Statement",
+      lines: [
+        { key: "revenue", label: "Revenue", fmt: (v) => formatNum(v) },
+        { key: "gross_profit", label: "Gross Profit", fmt: (v) => formatNum(v) },
+        { key: "operating_income", label: "Operating Income", fmt: (v) => formatNum(v) },
+        { key: "net_income", label: "Net Income", fmt: (v) => formatNum(v) },
+        {
+          key: "eps_diluted_fmt",
+          label: "EPS (Diluted, proxy)",
+          fmt: (v) => formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
+        },
+      ],
+    },
+    {
+      title: "Cash Flow",
+      lines: [
+        { key: "cfo", label: "Cash From Operations (CFO)", fmt: (v) => formatNum(v) },
+        { key: "capex", label: "Capital Expenditures (CapEx)", fmt: (v) => formatNum(v) },
+        { key: "fcf", label: "Free Cash Flow (FCF)", fmt: (v) => formatNum(v) },
+      ],
+    },
+    {
+      title: "Balance Sheet",
+      lines: [
+        { key: "assets_total", label: "Total Assets", fmt: (v) => formatNum(v) },
+        { key: "equity_total", label: "Total Equity", fmt: (v) => formatNum(v) },
+        { key: "cash_and_sti", label: "Cash & Short-Term Investments", fmt: (v) => formatNum(v) },
+        { key: "total_debt", label: "Total Debt", fmt: (v) => formatNum(v) },
+        {
+          key: "shares_outstanding_fmt",
+          label: "Shares Outstanding",
+          fmt: (v) => formatNum(v, { notation: "standard", maximumFractionDigits: 0 }),
+        },
+      ],
+    },
+  ];
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
       {/* Back to Screener */}
       <div className="flex items-center justify-between">
         <button
-          className={tabBtn}
+          className={btn}
           onClick={() => navigate("/")}
           aria-label="Back to Screener"
           title="Back to Screener"
         >
           ← Back to Screener
         </button>
-        <div className="flex items-center gap-2">
-          <button className={tabBtn + (tab === "IS" ? " ring-2 ring-sky-500/30" : "")} onClick={() => setTab("IS")}>Income Statement</button>
-          <button className={tabBtn + (tab === "BS" ? " ring-2 ring-sky-500/30" : "")} onClick={() => setTab("BS")}>Balance Sheet</button>
-          <button className={tabBtn + (tab === "CF" ? " ring-2 ring-sky-500/30" : "")} onClick={() => setTab("CF")}>Cash Flow</button>
-        </div>
       </div>
 
       {loading ? (
@@ -120,30 +140,67 @@ export default function FinancialsPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-900/60">
               <tr>
-                <th className="text-left px-4 py-3 font-semibold sticky left-0 bg-zinc-50 dark:bg-zinc-900/60">Line Item</th>
+                <th className="text-left px-4 py-3 font-semibold sticky left-0 bg-zinc-50 dark:bg-zinc-900/60 z-10">
+                  Line Item
+                </th>
                 {fiscalYears.map((y) => (
-                  <th key={y} className="text-right px-4 py-3 font-semibold">{y}</th>
+                  <th key={y} className="text-right px-4 py-3 font-semibold">
+                    {y}
+                  </th>
                 ))}
               </tr>
             </thead>
+
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {currentItems.map((item) => (
-                <tr key={item.key as string}>
-                  <td className="px-4 py-2 sticky left-0 bg-white dark:bg-zinc-950">{item.label}</td>
-                  {rows.map((r) => {
-                    const raw = (r as any)[item.key];
-                    return (
-                      <td key={`${item.key}-${r.fiscal_year}`} className="px-4 py-2 text-right">
-                        {item.fmt(raw)}
+              {sections.map((sec) => (
+                <SectionBlock key={sec.title} title={sec.title}>
+                  {sec.lines.map((ln) => (
+                    <tr key={String(ln.key)}>
+                      <td className="px-4 py-2 sticky left-0 bg-white dark:bg-zinc-950">
+                        {ln.label}
                       </td>
-                    );
-                  })}
-                </tr>
+                      {fiscalYears.map((y) => {
+                        const r = rows.find((rr) => rr.fiscal_year === y);
+                        const raw =
+                          ln.key === "eps_diluted_fmt"
+                            ? r?.eps_diluted
+                            : ln.key === "shares_outstanding_fmt"
+                            ? r?.shares_outstanding
+                            : (r as any)?.[ln.key];
+
+                        return (
+                          <td key={`${ln.key}-${y}`} className="px-4 py-2 text-right">
+                            {(ln.fmt ?? formatNum)(raw as number | null | undefined)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </SectionBlock>
               ))}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function SectionBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <tr>
+        <td colSpan={9999} className="px-4 py-2 text-xs tracking-wide uppercase text-zinc-500 bg-zinc-100 dark:bg-zinc-900/70">
+          {title}
+        </td>
+      </tr>
+      {children}
+    </>
   );
 }

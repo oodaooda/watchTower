@@ -66,6 +66,10 @@ class FinancialAnnual(Base):
     net_income = Column(Numeric(20, 4))
     cash_and_sti = Column(Numeric(20, 4))
     total_debt = Column(Numeric(20, 4))
+    gross_profit = Column(Numeric(20, 4))
+    operating_income = Column(Numeric(20, 4))
+    assets_total = Column(Numeric(20, 4))
+    equity_total = Column(Numeric(20, 4))
 
     # existing fields you already had
     cfo = Column(Numeric(20, 4))

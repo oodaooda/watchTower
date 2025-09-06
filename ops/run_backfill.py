@@ -89,6 +89,23 @@ CAPEX_TAGS = [
     "PurchasesOfPropertyAndEquipment",
 ]
 
+# ----------------------------
+# Tag preference lists (ordered by desirability)
+# ----------------------------
+# ... keep existing ...
+
+# NEW: Income statement extras
+GROSS_PROFIT_TAGS = ["GrossProfit"]
+OPERATING_INCOME_TAGS = ["OperatingIncomeLoss"]
+
+# NEW: Balance sheet totals
+ASSETS_TAGS = ["Assets"]
+EQUITY_TAGS = [
+    "StockholdersEquity",  # prefer pure equity when present
+    "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+]
+
+
 # Shares outstanding (end of period)
 SHARES_TAGS = ["CommonStockSharesOutstanding"]
 
@@ -174,6 +191,19 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     ni_maps = build_tag_maps(cf, NI_TAGS)
     ni_label, ni_map = merge_by_preference(ni_maps, NI_TAGS)
 
+    #Expanding Financial Tabs...
+    gp_maps = build_tag_maps(cf, GROSS_PROFIT_TAGS)
+    gp_label , gp_map = merge_by_preference(gp_maps, GROSS_PROFIT_TAGS)
+
+    op_maps = build_tag_maps(cf, OPERATING_INCOME_TAGS)
+    op_label, op_map = merge_by_preference(op_maps, OPERATING_INCOME_TAGS)
+
+    assets_maps = build_tag_maps(cf, ASSETS_TAGS)
+    assets_maps, assets_maps = merge_by_preference(assets_maps,ASSETS_TAGS)
+
+    equity_maps = build_tag_maps(cf, EQUITY_TAGS)
+    equity_label, equity_maps = merge_by_preference(equity_maps, EQUITY_TAGS)
+
     # 3) Cash+STI: choose longer of aggregate vs sum(components)
     cash_sti_label, cash_sti_map = merge_by_preference(build_tag_maps(cf, CASH_STI_AGG), CASH_STI_AGG)
     cash_only_label, cash_only_map = merge_by_preference(build_tag_maps(cf, CASH_ONLY), CASH_ONLY)
@@ -213,6 +243,11 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
             f"ocf=[{ocf_label}] {len(ocf_map)}y, "
             f"capex=[{capex_label}] {len(capex_map)}y, "
             f"shares=[{shares_label}] {len(shares_map)}y"
+            f"gp=[{gp_label}] {len(gp_map)}y,"
+            f"op=[{op_label}] {len(op_map)}y,"
+            f" assets=[{assets_maps}] {len(assets_maps)}y, "
+            f" equity=[{equity_label}] {len(equity_maps)}y, "
+
         )
 
     # 6) Union of all years we have for any series
@@ -224,7 +259,11 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
         | set(ocf_map)
         | set(capex_map)
         | set(shares_map)
-    )
+        | set(gp_map)
+        | set(op_map)
+        | set(assets_maps)
+        | set(equity_maps)
+        )
     if debug:
         print(f"[watchTower] {company.ticker}: candidate fiscal years: {years}")
     if not years:
@@ -245,7 +284,11 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
             "capex": capex_map.get(y),             # <-- was capital_expenditures
             "shares_outstanding": shares_map.get(y),
             "source": "sec",
-        }
+            "gross_profit": gp_map.get(y),
+            "operating_income": op_map.get(y),
+            "assets_total": assets_maps.get(y),
+            "equity_total": equity_maps.get(y),
+                    }
 
         ins = pg_insert(FinancialAnnual).values(**values)
         stmt = pg_insert(FinancialAnnual).values(**values)
@@ -260,6 +303,10 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
                 "capex": ins.excluded.capex,
                 "shares_outstanding": ins.excluded.shares_outstanding,
                 "source": ins.excluded.source,
+                "gross_profit": ins.excluded.gross_profit,
+                "operating_income": ins.excluded.operating_income,
+                "assets_total": ins.excluded.assets_total,
+                "equity_total": ins.excluded.equity_total,
             },
         )
         db.execute(stmt)
