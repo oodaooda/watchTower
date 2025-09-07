@@ -32,13 +32,14 @@ Implementation notes
 from __future__ import annotations
 
 from typing import Dict, List, Any, Optional
+from http.client import RemoteDisconnected
 import time
 import datetime as dt
 import math
 
 import requests
-
 from app.core.config import settings
+from requests.exceptions import ConnectionError, ReadTimeout, ChunkedEncodingError
 
 # -----------------------------
 # HTTP session with SEC User-Agent
@@ -68,30 +69,44 @@ UNIT_BY_TAG = {
 # Fetcher with retry/backoff
 # -----------------------------
 
+# add near the top with other imports
+import time
+from http.client import RemoteDisconnected
+import urllib3
+import requests
+from requests.exceptions import ConnectionError, ReadTimeout, ChunkedEncodingError
+
 def fetch_companyfacts(cik: int, max_retries: int = 4, timeout: int = 30) -> Dict[str, Any]:
     """Download companyfacts JSON for a CIK (CIK will be zero-padded).
-
-    Returns an empty dict on a hard 404. Raises for other persistent failures.
+    Returns {} on hard 404; retries on transient network errors and 5xx/429.
     """
     url = BASE_URL.format(cik=int(cik))  # zero-pads via :010d
-    delay = 0.5
+    delay = 0.5  # base backoff
     for attempt in range(max_retries + 1):
-        r = _session.get(url, timeout=timeout)
+        try:
+            r = _session.get(url, timeout=timeout)
+        except (ConnectionError, ReadTimeout, ChunkedEncodingError,
+                urllib3.exceptions.ProtocolError, RemoteDisconnected) as e:
+            # transient connection issue — backoff and retry
+            time.sleep(delay)
+            delay = min(delay * 2, 8.0)
+            continue
+
         if r.status_code == 200:
             return r.json()
         if r.status_code == 404:
-            # CIK may be invalid; return empty to let caller skip
-            return {}
+            return {}  # bad/unknown CIK
         if r.status_code in (429, 500, 502, 503, 504):
-            # polite backoff
             ra = r.headers.get("Retry-After")
             sleep_s = float(ra) if ra and ra.isdigit() else delay
             time.sleep(sleep_s)
             delay = min(delay * 2, 8.0)
             continue
-        # other errors -> raise
+
+        # other codes → raise
         r.raise_for_status()
-    # If we exit loop without return, give empty
+
+    # give up
     return {}
 
 

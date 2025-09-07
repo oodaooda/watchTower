@@ -124,10 +124,10 @@ def main() -> None:
             # 1) PRICE FIRST (detect AV limits early)
             try:
                 price = av_global_quote(co.ticker, apikey)
-            except RuntimeError as e:
-                if "AV_RATE_LIMIT" in str(e):
-                    print("[prices] rate limit hit; stopping early"); break
-                raise
+            except Exception as e:
+                print(f"[prices] {co.ticker}: skipped due to error: {e}")
+                time.sleep(args.sleep or 0.5)
+                continue
             if price is None:
                 print(f"[prices] {co.ticker}: skip (no price)")
                 time.sleep(args.sleep); continue

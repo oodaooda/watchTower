@@ -321,7 +321,7 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill SEC fundamentals into financials_annual")
-    parser.add_argument("--limit", type=int, default=50, help="Max companies to process")
+    parser.add_argument("--limit", type=int, default=10000, help="Max companies to process")
     parser.add_argument("--ticker", type=str, default=None, help="Only this ticker (exact)")
     parser.add_argument("--company-id", type=int, default=None, help="Only this company_id")
     parser.add_argument("--debug", action="store_true", help="Print tag choices and years")
