@@ -1,42 +1,38 @@
 // ui/src/components/ResultsTable.tsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { ScreenRow } from "../lib/api"; // keep your original import
+import type { ScreenRow } from "../lib/api";
 import ValuationModal from "./ValuationModal";
 
-// ---- Extended row: your /valuation/summary merge adds these ----
+// /valuation/summary merge adds these
 type RowWithVal = ScreenRow & {
   fair_value_per_share?: number | null;
   upside_vs_price?: number | null;
 };
 
-// ---- Formatters ------------------------------------------------------------
 const ND = "—";
 const ndash = () => ND;
 
 function fmtPct(x: number | null | undefined) {
   if (x == null) return ND;
-  return `${(x * 100).toFixed(1)}%`;
+  return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(x);
 }
-function fmtNum(x: number | null | undefined, d = 4) {
+function fmtNum(x: number | null | undefined, d = 3) {
   if (x == null) return ND;
-  return x.toFixed(d);
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: d }).format(x);
 }
-function fmtUSD(x: number | null | undefined, d = 2) {
+function fmtUSD(x: number | null | undefined) {
   if (x == null) return ND;
-  return `$${x.toFixed(d)}`;
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(x);
 }
 function secUrlForTicker(t: string) {
-  return `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(
-    t
-  )}`;
+  return `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(t)}`;
 }
 
-// ---- Component -------------------------------------------------------------
 export default function ResultsTable({
   rows,
   loading,
-  filterText, // NEW: client-side filter text
+  filterText,
 }: {
   rows: RowWithVal[];
   loading: boolean;
@@ -44,48 +40,50 @@ export default function ResultsTable({
 }) {
   const [valTicker, setValTicker] = useState<string | null>(null);
 
-  // Client-side search filter (by ticker or company name)
+  // client-side filter (ticker or name)
   const q = (filterText ?? "").trim().toUpperCase();
-  const filteredRows =
-    q.length > 0
-      ? rows.filter(
-          (r) =>
-            r.ticker.toUpperCase().includes(q) ||
-            (r.name ?? "").toUpperCase().includes(q)
-        )
-      : rows;
+  const filteredRows = useMemo(() => {
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.ticker.toUpperCase().includes(q) ||
+        (r.name ?? "").toUpperCase().includes(q)
+    );
+  }, [rows, q]);
 
   const hasData = filteredRows.length > 0;
 
   return (
     <>
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-800">
-        <table className="min-w-full text-[13px] md:text-sm whitespace-nowrap">
-          <thead>
-            <tr className="text-left border-b border-zinc-800 bg-zinc-900/40 text-[12.5px] md:text-sm">
-              <th className="py-2 px-4">Ticker</th>
-              <th className="py-2 px-4">Company</th>
-              <th className="py-2 px-4">Industry</th>
-              <th className="py-2 px-4">FY</th>
+      {/* NOTE: ensure the page/container above uses: w-full max-w-none */}
 
-              <th className="py-2 px-4 text-right">P/E (TTM)</th>
-              <th className="py-2 px-4 text-right">Cash/Debt</th>
-              <th className="py-2 px-4 text-right">Growth Cons.</th>
-              <th className="py-2 px-4 text-right">Rev CAGR (5y)</th>
-              <th className="py-2 px-4 text-right">NI CAGR (5y)</th>
-              <th className="py-2 px-4 text-right">FCF CAGR (5y)</th>
+      <div className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4">
+        <table className="w-full table-auto text-[12px] leading-5">
+          <thead className="bg-zinc-50 dark:bg-zinc-900/60">
+            <tr className="text-left">
+              <th className="py-2.5 px-3 font-semibold">Ticker</th>
+              <th className="py-2.5 px-3 font-semibold">Company</th>
+              <th className="py-2.5 px-3 font-semibold">Industry</th>
+              <th className="py-2.5 px-3 font-semibold text-right">FY</th>
 
-              <th className="py-2 px-4 text-right">Price</th>
-              <th className="py-2 px-4 text-right">Fair Value</th>
-              <th className="py-2 px-4 text-right">Upside</th>
-              <th className="py-2 px-4 text-right">Valuation</th>
+              <th className="py-2.5 px-3 font-semibold text-right">P/E (TTM)</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Cash/Debt</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Growth Cons.</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Rev CAGR (5y)</th>
+              <th className="py-2.5 px-3 font-semibold text-right">NI CAGR (5y)</th>
+              <th className="py-2.5 px-3 font-semibold text-right">FCF CAGR (5y)</th>
+
+              <th className="py-2.5 px-3 font-semibold text-right">Price</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Fair Value</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Upside</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Valuation</th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {loading && (
               <tr>
-                <td colSpan={14} className="px-4 py-4 text-zinc-400">
+                <td colSpan={14} className="px-4 py-4 text-zinc-500">
                   Loading…
                 </td>
               </tr>
@@ -93,7 +91,7 @@ export default function ResultsTable({
 
             {!loading && !hasData && (
               <tr>
-                <td colSpan={14} className="px-4 py-4 text-zinc-400">
+                <td colSpan={14} className="px-4 py-4 text-zinc-500">
                   No results.
                 </td>
               </tr>
@@ -102,25 +100,26 @@ export default function ResultsTable({
             {!loading &&
               hasData &&
               filteredRows.map((r) => {
-                const upsideClass =
+                const industry = (r as any).industry ?? (r as any).industry_name ?? ndash();
+                const upClass =
                   r.upside_vs_price == null
                     ? ""
                     : r.upside_vs_price >= 0
-                    ? "text-emerald-500"
-                    : "text-rose-500";
+                    ? "text-emerald-600"
+                    : "text-rose-600";
 
                 return (
                   <tr
-                    key={`${r.company_id}-${r.fiscal_year}`}
-                    className="border-b border-zinc-800 hover:bg-zinc-800/40"
+                    key={`${r.company_id}-${r.fiscal_year ?? ""}`}
+                    className="hover:bg-zinc-900/5 dark:hover:bg-zinc-50/5"
                   >
                     {/* Ticker → SEC */}
-                    <td className="py-2 px-4 font-semibold">
+                    <td className="py-2 px-3 font-semibold">
                       <a
                         href={secUrlForTicker(r.ticker)}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-sky-400 hover:underline"
+                        className="text-sky-500 hover:underline"
                         title="Open SEC filings"
                       >
                         {r.ticker}
@@ -128,52 +127,46 @@ export default function ResultsTable({
                     </td>
 
                     {/* Company → Financials */}
-                    <td className="py-2 px-4">
+                    <td className="py-2 px-3">
                       <Link
                         to={`/financials/${r.company_id}`}
-                        className="text-sky-400 hover:underline"
+                        className="text-sky-500 hover:underline"
                         title="View Financials"
                       >
-                        {r.name}
+                        {/* truncate keeps long names from forcing scroll */}
+                        <span className="truncate inline-block max-w-full" title={r.name}>
+                          {r.name}
+                        </span>
                       </Link>
                     </td>
 
-                    <td className="py-2 px-4">{r.industry ?? ndash()}</td>
-                    <td className="py-2 px-4">{r.fiscal_year}</td>
-
-                    <td className="py-2 px-4 text-right">
-                      {fmtNum(r.pe_ttm, 4)}
-                    </td>
-                    <td className="py-2 px-4 text-right">
-                      {fmtNum(r.cash_debt_ratio, 4)}
-                    </td>
-                    <td className="py-2 px-4 text-right">
-                      {r.growth_consistency ?? ndash()}
-                    </td>
-                    <td className="py-2 px-4 text-right">
-                      {fmtPct(r.rev_cagr_5y)}
-                    </td>
-                    <td className="py-2 px-4 text-right">
-                      {fmtPct(r.ni_cagr_5y)}
-                    </td>
-                    <td className="py-2 px-4 text-right">
-                      {fmtPct(r.fcf_cagr_5y)}
+                    {/* Industry */}
+                    <td className="py-2 px-3">
+                      <span className="truncate inline-block max-w-full" title={industry}>
+                        {industry}
+                      </span>
                     </td>
 
-                    {/* Price / FV / Upside (from /valuation/summary merge) */}
-                    <td className="py-2 px-4 text-right">{fmtUSD(r.price)}</td>
-                    <td className="py-2 px-4 text-right">
-                      {fmtUSD(r.fair_value_per_share)}
-                    </td>
-                    <td className={`py-2 px-4 text-right font-medium ${upsideClass}`}>
+                    <td className="py-2 px-3 text-right tabular-nums">{r.fiscal_year ?? ND}</td>
+
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtNum(r.pe_ttm, 3)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtNum(r.cash_debt_ratio, 4)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{r.growth_consistency ?? ND}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtPct(r.rev_cagr_5y)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtPct(r.ni_cagr_5y)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtPct(r.fcf_cagr_5y)}</td>
+
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtUSD(r.price)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtUSD(r.fair_value_per_share)}</td>
+                    <td className={`py-2 px-3 text-right tabular-nums font-medium ${upClass}`}>
                       {fmtPct(r.upside_vs_price)}
                     </td>
 
                     {/* Valuation action → modal */}
-                    <td className="py-2 px-4 text-right">
+                    <td className="py-2 px-3 text-right">
                       <button
                         type="button"
-                        className="text-sky-400 hover:underline"
+                        className="text-sky-500 hover:underline"
                         onClick={() => setValTicker(r.ticker)}
                       >
                         Valuation

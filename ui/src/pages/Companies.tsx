@@ -77,7 +77,7 @@ export default function CompaniesPage() {
     `https://www.sec.gov/edgar/search/#/category=company&entityName=${encodeURIComponent(t)}`;
 
   return (
-    <div className="mx-auto max-w-6xl p-4 space-y-4">
+    <div className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4">
       <h1 className="text-2xl font-semibold">Companies</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -111,7 +111,7 @@ export default function CompaniesPage() {
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
-        <table className="min-w-full text-sm">
+        <table className="w-full table-auto text-[12px] leading-5">
           <thead className="bg-zinc-900/60">
             <tr>
               <th className="px-3 py-2 text-left">Ticker</th>
