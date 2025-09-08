@@ -119,9 +119,11 @@ export default function FilterBar({
   }
 
   return (
-    <div className="rounded-2xl p-4 mb-4 border border-zinc-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
+  
+    <div className="rounded-xl p-3 mb-3 border border-zinc-200 bg-white shadow-sm
+                dark:border-white/10 dark:bg-white/5">
       {/* First cell: SEARCH (independent) */}
-      <div className="grid grid-cols-2 md:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-8 gap-2">
         <div className="md:col-span-2">
           <label className="text-xs mb-1 block">Search (all companies)</label>
           <input

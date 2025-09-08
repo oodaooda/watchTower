@@ -1,161 +1,175 @@
-// ui/src/pages/Screener.tsx
-import { useEffect, useRef, useState } from "react";
+// ui/src/pages/ScreenerPage.tsx
+import { useEffect, useMemo, useState } from "react";
+import ResultsTable, { SortKey, SortDir } from "../components/ResultsTable";
 import FilterBar from "../components/FilterBar";
-import ResultsTable from "../components/ResultsTable";
-import { fetchScreen, fetchValuationSummary, type ScreenRow } from "../lib/api";
 
-type MergedRow = ScreenRow & {
+type ScreenRow = {
+  company_id: number;
+  ticker: string;
+  name: string;
+  industry?: string | null;
+  fiscal_year?: number | null;
+  pe_ttm?: number | null;
+  cash_debt_ratio?: number | null;
+  growth_consistency?: number | null;
+  rev_cagr_5y?: number | null;
+  ni_cagr_5y?: number | null;
+  fcf_cagr_5y?: number | null;
+  price?: number | null;
+};
+
+type ScreenResponse = { total_count: number; items: ScreenRow[] };
+
+type FilterParams = {
+  pe_max?: number;
+  cash_debt_min?: number;
+  growth_consistency_min?: number;
+  rev_cagr_min?: number;
+  ni_cagr_min?: number;
+  fcf_cagr_min?: number;
+  industry?: string;        // empty/undefined => all
+};
+
+type ValSummary = {
+  ticker: string;
   fair_value_per_share?: number | null;
   upside_vs_price?: number | null;
 };
 
-const pageSize = 10;
+const API = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
-// Parse a search box string into potential tickers.
-// Accept comma/space separated symbols; keep short alnum/.- tokens.
-function parseTickers(input: string): string[] {
-  return Array.from(
-    new Set(
-      input
-        .split(/[,\s]+/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .filter((s) => /^[A-Za-z0-9.\-]{1,8}$/.test(s))
-        .map((s) => s.toUpperCase())
-    )
-  );
-}
-
-export default function Screener() {
-  const [rows, setRows] = useState<MergedRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function ScreenerPage() {
+  // paging
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [lastParams, setLastParams] = useState<Record<string, any>>({});
-  const reqSeq = useRef(0);
+  const pageSize = 10;
 
-  // keep search text controlled in the bar
+  // search + filters
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<FilterParams>({});
 
-  async function run(params: Record<string, any>, resetPage = true) {
-    const mySeq = ++reqSeq.current;
-    if (resetPage) setPage(1);
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchScreen({
-        limit: pageSize,
-        offset: resetPage ? 0 : (page - 1) * pageSize,
-        ...params, // only what we pass (either SEARCH-ONLY or FILTERS-ONLY)
-      });
+  // server sort
+  const [sortKey, setSortKey] = useState<SortKey>("ticker");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-      if (reqSeq.current !== mySeq) return;
+  // data
+  const [rows, setRows] = useState<(ScreenRow & ValSummary)[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-      setRows(res.items);
-      setTotalPages(Math.max(1, Math.ceil(res.total_count / pageSize)));
-      setLastParams(params);
-
-      // merge valuation summary
-      if (res.items.length) {
-        const tickers = [...new Set(res.items.map((r: ScreenRow) => r.ticker))];
-        let vals: Awaited<ReturnType<typeof fetchValuationSummary>> = [];
-        try {
-          vals = await fetchValuationSummary(tickers);
-        } catch {
-          vals = [];
-        }
-        if (reqSeq.current !== mySeq) return;
-
-        const vmap = new Map(vals.map((v) => [v.ticker.toUpperCase(), v]));
-        setRows((prev) =>
-          prev.map((r) => {
-            const v = vmap.get(r.ticker.toUpperCase());
-            return {
-              ...r,
-              price: r.price ?? v?.price ?? null,
-              fair_value_per_share: v?.fair_value_per_share ?? null,
-              upside_vs_price: v?.upside_vs_price ?? null,
-            };
-          })
-        );
-      }
-    } catch (e: any) {
-      if (reqSeq.current === mySeq) setError(e?.message ?? "Failed to load data");
-    } finally {
-      if (reqSeq.current === mySeq) setLoading(false);
-    }
-  }
-
-  // Initial load (your default filters, NO q/tickers)
+  // Fetch + (optional) valuation merge
   useEffect(() => {
-    run({ cash_debt_min: 0.8, growth_consistency_min: 7 }, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const params = new URLSearchParams();
+    params.set("limit", String(pageSize));
+    params.set("offset", String((page - 1) * pageSize));
+    if (search) params.set("q", search);
 
-  // Filters-only run (do NOT include q or tickers)
-  function handleRunFilters(params: Record<string, any>) {
-    run(params, true);
-  }
+    // include ALL filters that are set
+    (Object.entries(filters) as [keyof FilterParams, any][]).forEach(([k, v]) => {
+      if (v !== undefined && v !== "") params.set(k, String(v));
+    });
 
-  // Search-only run: if input looks like one or more tickers, use ?tickers=...
-  // Otherwise use ?q=... . Always include_untracked=true to search the whole DB.
-  function handleSearch(query: string) {
-    const raw = query.trim();
-    if (!raw) {
-      // blank search → fall back to your default filters
-      run({ cash_debt_min: 0.8, growth_consistency_min: 7 }, true);
-      return;
-    }
-    const syms = parseTickers(raw);
-    if (syms.length > 0) {
-      run({ tickers: syms.join(","), include_untracked: true }, true);
-    } else {
-      run({ q: raw, include_untracked: true }, true);
-    }
-  }
+    params.set("sort_key", sortKey);
+    params.set("sort_dir", sortDir);
 
-  function handlePageChange(newPage: number) {
-    setPage(newPage);
-    run(lastParams, false); // continue the last mode (search or filters)
+    let cancelled = false;
+    setLoading(true);
+
+    (async () => {
+      try {
+        const r = await fetch(`${API}/screen?${params.toString()}`);
+        const json: ScreenResponse = await r.json();
+
+        // optional: merge valuation summary (preserve server order)
+        const tickers = json.items.map((x) => x.ticker).filter(Boolean);
+        let valMap: Record<string, ValSummary> = {};
+        if (tickers.length) {
+          try {
+            const rv = await fetch(
+              `${API}/valuation/summary?tickers=${encodeURIComponent(tickers.join(","))}`
+            );
+            const vals: ValSummary[] = await rv.json();
+            valMap = Object.fromEntries(vals.map((v) => [v.ticker, v]));
+          } catch {
+            // ignore valuation failures
+          }
+        }
+
+        const merged = json.items.map((r) => ({ ...r, ...(valMap[r.ticker] ?? {}) }));
+        if (!cancelled) {
+          setRows(merged);
+          setTotal(json.total_count);
+        }
+      } catch {
+        if (!cancelled) {
+          setRows([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, pageSize, search, filters, sortKey, sortDir]);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(total / pageSize)),
+    [total, pageSize]
+  );
+
+  // header click: ask server to re-sort globally
+  function handleSort(k: SortKey) {
+    setSortDir((d) => (k === sortKey ? (d === "asc" ? "desc" : "asc") : "asc"));
+    setSortKey(k);
+    setPage(1);
   }
 
   return (
-    <>
-      <h2 className="text-xl font-semibold mb-3">Screener</h2>
+    //<div className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4">
+    //<div className="w-full max-w-[1800px] mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-2">
+    <div className="mt-6 w-full max-w-[1800px] mx-auto rounded-2xl  border-zinc-200 dark:border-zinc-800 overflow-hidden">
 
       <FilterBar
         search={search}
         onSearchChange={setSearch}
-        onSearch={handleSearch}
-        onRunFilters={handleRunFilters}
+        onSearch={(q) => {
+          setSearch(q);
+          setPage(1);
+        }}
+        onRunFilters={(p) => {
+          setFilters(p);   // <<— keep every filter from the bar
+          setPage(1);
+        }}
       />
 
-      {error && (
-        <div className="my-3 rounded-lg border border-rose-600/30 bg-rose-950/30 px-3 py-2 text-rose-300">
-          {error}
-        </div>
-      )}
+      <ResultsTable
+        rows={rows as any}
+        loading={loading}
+        filterText={search}    // client-side *text* filter only
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onRequestSort={handleSort}
+      />
 
-      <ResultsTable rows={rows} loading={loading} />
-
-      <div className="flex items-center justify-between mt-4">
+      <div className="flex items-center justify-between mt-3">
         <button
-          onClick={() => handlePageChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="px-3 py-1.5 rounded bg-zinc-800 text-white disabled:opacity-50"
+          onClick={() => setPage((x) => Math.max(1, x - 1))}
+          className="rounded-xl border border-zinc-700 px-4 py-2 disabled:opacity-50"
         >
           ← Prev
         </button>
-        <span>Page {page} of {totalPages}</span>
+        <div className="text-sm text-zinc-400">Page {page} of {totalPages}</div>
         <button
-          onClick={() => handlePageChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          className="px-3 py-1.5 rounded bg-zinc-800 text-white disabled:opacity-50"
+          onClick={() => setPage((x) => Math.min(totalPages, x + 1))}
+          className="rounded-xl border border-zinc-700 px-4 py-2 disabled:opacity-50"
         >
           Next →
         </button>
       </div>
-    </>
+    </div>
   );
 }
