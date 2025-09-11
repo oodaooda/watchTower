@@ -278,6 +278,7 @@ function FragmentSection({
 
   return (
     <>
+      {/* section header */}
       <tr>
         <td
           colSpan={9999}
@@ -286,6 +287,8 @@ function FragmentSection({
           {title}
         </td>
       </tr>
+
+      {/* section rows */}
       {lines.map((ln) => (
         <tr key={title + ln.key}>
           <td className="sticky left-0 bg-white dark:bg-zinc-950 px-3 py-2 text-[12px] leading-5 align-middle">
@@ -293,12 +296,25 @@ function FragmentSection({
           </td>
           {fiscalYears.map((y) => {
             const raw = ln.source ? ln.source(y) : resolve(ln.key, y);
+            const formatted = (ln.fmt ?? formatNum)(raw as number | null | undefined);
+
+            // highlight negatives in red
+            const isNegative = typeof raw === "number" && raw < 0;
+
+            // extra styling for Net Income (subtotal style)
+            const extraClass =
+              ln.key === "net_income"
+                ? "font-bold border-t border-zinc-400"
+                : "";
+
             return (
               <td
                 key={`${ln.key}-${y}`}
-                className="px-3 py-2 text-[12px] leading-5 align-middle text-right font-mono tabular-nums whitespace-nowrap"
+                className={`px-3 py-2 text-[12px] leading-5 align-middle text-right font-mono tabular-nums whitespace-nowrap ${
+                  isNegative ? "text-red-500" : ""
+                } ${extraClass}`}
               >
-                {(ln.fmt ?? formatNum)(raw as number | null | undefined)}
+                {formatted}
               </td>
             );
           })}
@@ -307,3 +323,4 @@ function FragmentSection({
     </>
   );
 }
+
