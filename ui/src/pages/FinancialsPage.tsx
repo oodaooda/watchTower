@@ -112,48 +112,62 @@ export default function FinancialsPage() {
     return (gp as number) - (op as number);
   };
 
-  const sections = [
-    {
-      title: "Income Statement",
-      lines: [
-        { key: "revenue", label: "Revenue" },
-        { key: "gross_profit", label: "Gross Profit" },
-        { key: "cogs", label: "Cost of Revenue (derived)", source: cogs },
-        { key: "operating_income", label: "Operating Income" },
-        { key: "opex", label: "Operating Expenses (derived)", source: opex },
-        { key: "net_income", label: "Net Income" },
-        {
-          key: "eps_diluted",
-          label: "EPS (Diluted, proxy)",
-          fmt: (v?: number | null) =>
-            formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
-        },
-      ],
-    },
-    {
-      title: "Cash Flow",
-      lines: [
-        { key: "cfo", label: "Cash From Operations (CFO)" },
-        { key: "capex", label: "Capital Expenditures (CapEx)" },
-        { key: "fcf", label: "Free Cash Flow (FCF)" },
-      ],
-    },
-    {
-      title: "Balance Sheet",
-      lines: [
-        { key: "assets_total", label: "Total Assets" },
-        { key: "equity_total", label: "Total Equity" },
-        { key: "cash_and_sti", label: "Cash & Short-Term Investments" },
-        { key: "total_debt", label: "Total Debt" },
-        {
-          key: "shares_outstanding",
-          label: "Shares Outstanding",
-          fmt: (v?: number | null) =>
-            formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
-        },
-      ],
-    },
-  ] as const;
+ const sections = [
+  {
+    title: "Income Statement",
+    lines: [
+      { key: "revenue", label: "Revenue" },
+      { key: "cogs", label: "Cost of Revenue" },
+      { key: "gross_profit", label: "Gross Profit" },
+      { key: "research_and_development", label: "R&D Expense" },
+      { key: "selling_general_admin", label: "SG&A Expense" },        
+      { key: "operating_income", label: "Operating Income" },
+      { key: "opex", label: "Operating Expenses (derived)", source: opex },
+      { key: "net_income", label: "Net Income" },
+      { key: "interest_expense", label: "Interest Expense" },
+      { key: "income_tax_expense", label: "Tax Expense" },
+      {
+        key: "eps_diluted",
+        label: "EPS (Diluted, proxy)",
+        fmt: (v?: number | null) =>
+          formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
+      },
+    ],
+  },
+  {
+    title: "Cash Flow",
+    lines: [
+      { key: "cfo", label: "Cash From Operations (CFO)" },
+      { key: "capex", label: "Capital Expenditures (CapEx)" },
+      { key: "depreciation_amortization", label: "Depreciation & Amortization" },
+      { key: "share_based_comp", label: "Share-based Compensation" },
+      { key: "dividends_paid", label: "Dividends Paid" },
+      { key: "share_repurchases", label: "Share Repurchases" },
+      { key: "fcf", label: "Free Cash Flow (FCF)" },
+    ],
+  },
+  {
+    title: "Balance Sheet",
+    lines: [
+      { key: "assets_total", label: "Total Assets" },
+      { key: "liabilities_current", label: "Current Liabilities" },
+      { key: "liabilities_longterm", label: "Long-Term Liabilities" },
+      { key: "equity_total", label: "Total Equity" },
+      { key: "cash_and_sti", label: "Cash & Short-Term Investments" },
+      { key: "total_debt", label: "Total Debt" },
+      { key: "inventories", label: "Inventories" },
+      { key: "accounts_receivable", label: "Accounts Receivable" },
+      { key: "accounts_payable", label: "Accounts Payable" },
+      {
+        key: "shares_outstanding",
+        label: "Shares Outstanding",
+        fmt: (v?: number | null) =>
+          formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
+      },
+    ],
+  },
+] as const;
+
 
   const { ref: outerRef, w: wrapW } = useContainerWidth<HTMLDivElement>();
   const leftW = Math.round(Math.min(360, Math.max(220, wrapW * 0.22)));

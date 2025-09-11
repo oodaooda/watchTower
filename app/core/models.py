@@ -63,24 +63,42 @@ class FinancialAnnual(Base):
     fiscal_period = Column(String, nullable=False)
     report_date = Column(Date)
 
+    # Income Statement
     revenue = Column(Numeric(20, 4))
+    cost_of_revenue = Column(Numeric(20, 4))
+    gross_profit = Column(Numeric(20, 4))
+    research_and_development = Column(Numeric(20, 4))
+    selling_general_admin = Column(Numeric(20, 4))
+    operating_income = Column(Numeric(20, 4))
+    interest_expense = Column(Numeric(20, 4))
+    income_tax_expense = Column(Numeric(20, 4))
     net_income = Column(Numeric(20, 4))
+
+
+
+    #Balance Sheet
+    assets_total = Column(Numeric(20, 4))
+    liabilities_current = Column(Numeric(20, 4))
+    liabilities_longterm = Column(Numeric(20, 4))
+    equity_total = Column(Numeric(20, 4))
+    inventories = Column(Numeric(20, 4))
+    accounts_receivable = Column(Numeric(20, 4))
+    accounts_payable = Column(Numeric(20, 4))
     cash_and_sti = Column(Numeric(20, 4))
     total_debt = Column(Numeric(20, 4))
-    gross_profit = Column(Numeric(20, 4))    
-    operating_income = Column(Numeric(20, 4))
-    assets_total = Column(Numeric(20, 4))
-    equity_total = Column(Numeric(20, 4))
-
-    # existing fields you already had
-    cfo = Column(Numeric(20, 4))
-    capex = Column(Numeric(20, 4))
     shares_outstanding = Column(Numeric(20, 4))
 
-    # NEW: map the columns you added with ALTER TABLE
-    operating_cash_flow  = Column(Numeric(20, 4))
-    capital_expenditures = Column(Numeric(20, 4))
+    # Cash Flow
+    cfo = Column(Numeric(20, 4))
+    capex = Column(Numeric(20, 4))
+    depreciation_amortization = Column(Numeric(20, 4))
+    share_based_comp = Column(Numeric(20, 4))
+    dividends_paid = Column(Numeric(20, 4))
+    share_repurchases = Column(Numeric(20, 4))
+    fcf = Column(Numeric(20, 4))                     
 
+
+    # NEW: map the columns you added with ALTER TABLE
     source = Column(String, nullable=False)
     xbrl_confidence = Column(Numeric(6, 4))
 

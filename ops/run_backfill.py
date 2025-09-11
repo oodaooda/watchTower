@@ -43,6 +43,8 @@ import requests
 # ----------------------------
 
 # Revenue tags (ASC 606 first, then legacy)
+
+# Revenue
 REV_TAGS = [
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "SalesRevenueNet",
@@ -51,7 +53,7 @@ REV_TAGS = [
     "RevenueFromContractWithCustomerIncludingAssessedTax",
 ]
 
-# Net income
+# Net Income
 NI_TAGS = ["NetIncomeLoss"]
 
 # Cash + Short-Term Investments
@@ -77,7 +79,7 @@ DEBT_AGG = [
     "LongTermDebt",
 ]
 
-# CFO (operating cash flow)
+# Operating Cash Flow
 OCF_TAGS = [
     "NetCashProvidedByUsedInOperatingActivities",
     "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
@@ -94,25 +96,40 @@ CAPEX_TAGS = [
     "PurchasesOfPropertyAndEquipment",
 ]
 
-# ----------------------------
-# Tag preference lists (ordered by desirability)
-# ----------------------------
-# ... keep existing ...
-
-# NEW: Income statement extras
+# 🔹 Income Statement Extras
+COGS_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
 GROSS_PROFIT_TAGS = ["GrossProfit"]
+RND_TAGS = ["ResearchAndDevelopmentExpense"]
+SGA_TAGS = [
+    "SellingGeneralAndAdministrativeExpense",
+    "SellingAndMarketingExpense",
+    "GeneralAndAdministrativeExpense",
+]
 OPERATING_INCOME_TAGS = ["OperatingIncomeLoss"]
+INT_EXP_TAGS = ["InterestExpense", "InterestExpenseDebt"]
+TAX_EXP_TAGS = ["IncomeTaxExpenseBenefit", "IncomeTaxExpenseBenefitContinuingOperations"]
 
-# NEW: Balance sheet totals
+# 🔹 Cash Flow Extras
+DEP_AMORT_TAGS = ["DepreciationAndAmortization"]
+SBC_TAGS = ["ShareBasedCompensation"]
+DIVIDENDS_TAGS = ["PaymentsOfDividends"]
+REPURCHASE_TAGS = ["PaymentsForRepurchaseOfCommonStock"]
+
+# 🔹 Balance Sheet Extras
 ASSETS_TAGS = ["Assets"]
+LIAB_CURRENT_TAGS = ["LiabilitiesCurrent"]
+LIAB_LT_TAGS = ["LongTermLiabilitiesNoncurrent"]
 EQUITY_TAGS = [
-    "StockholdersEquity",  # prefer pure equity when present
+    "StockholdersEquity",
     "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
 ]
-
+INVENTORIES_TAGS = ["InventoryNet"]
+AR_TAGS = ["AccountsReceivableNetCurrent"]
+AP_TAGS = ["AccountsPayableCurrent"]
 
 # Shares outstanding (end of period)
 SHARES_TAGS = ["CommonStockSharesOutstanding"]
+
 
 # ----------------------------
 # Series helpers
@@ -173,12 +190,14 @@ def merge_by_preference(tag_maps: Dict[str, Dict[int, float]], pref: List[str]) 
 
 def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     """Fetch companyfacts and upsert annual rows. Returns years written."""
+
+    # --- Skip if no CIK (some OTC tickers, foreign ADRs, etc.)
     if company.cik is None:
         if debug:
             print(f"[watchTower] {company.ticker}: no CIK on record; skipping")
         return 0
 
-    # 1) Fetch companyfacts
+    # 1) Fetch companyfacts from SEC
     cf = fetch_companyfacts(int(company.cik))
     if not cf:
         if debug:
@@ -189,27 +208,29 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
         tags = list_available_tags(cf)
         print(f"[watchTower] {company.ticker}: available us-gaap tags (sample): {tags[:20]} ... total={len(tags)}")
 
-    # 2) Revenue & Net Income: merge-by-preference across tags
-    rev_maps = build_tag_maps(cf, REV_TAGS)
-    rev_label, rev_map = merge_by_preference(rev_maps, REV_TAGS)
-    
-    ni_maps = build_tag_maps(cf, NI_TAGS)
-    ni_label, ni_map = merge_by_preference(ni_maps, NI_TAGS)
+    # 2) Core income statement
+    rev_label, rev_map = merge_by_preference(build_tag_maps(cf, REV_TAGS), REV_TAGS)
+    ni_label, ni_map = merge_by_preference(build_tag_maps(cf, NI_TAGS), NI_TAGS)
 
-    #Expanding Financial Tabs...
-    gp_maps = build_tag_maps(cf, GROSS_PROFIT_TAGS)
-    gp_label , gp_map = merge_by_preference(gp_maps, GROSS_PROFIT_TAGS)
+    # 3) Income statement extras
+    gp_label, gp_map = merge_by_preference(build_tag_maps(cf, GROSS_PROFIT_TAGS), GROSS_PROFIT_TAGS)
+    op_label, op_map = merge_by_preference(build_tag_maps(cf, OPERATING_INCOME_TAGS), OPERATING_INCOME_TAGS)
+    cogs_label, cogs_map = merge_by_preference(build_tag_maps(cf, COGS_TAGS), COGS_TAGS)
+    rnd_label, rnd_map = merge_by_preference(build_tag_maps(cf, RND_TAGS), RND_TAGS)
+    sga_label, sga_map = merge_by_preference(build_tag_maps(cf, SGA_TAGS), SGA_TAGS)
+    int_label, int_map = merge_by_preference(build_tag_maps(cf, INT_EXP_TAGS), INT_EXP_TAGS)
+    tax_label, tax_map = merge_by_preference(build_tag_maps(cf, TAX_EXP_TAGS), TAX_EXP_TAGS)
 
-    op_maps = build_tag_maps(cf, OPERATING_INCOME_TAGS)
-    op_label, op_map = merge_by_preference(op_maps, OPERATING_INCOME_TAGS)
+    # 4) Balance sheet
+    assets_label, assets_map = merge_by_preference(build_tag_maps(cf, ASSETS_TAGS), ASSETS_TAGS)
+    equity_label, equity_map = merge_by_preference(build_tag_maps(cf, EQUITY_TAGS), EQUITY_TAGS)
+    liab_cur_label, liab_cur_map = merge_by_preference(build_tag_maps(cf, LIAB_CURRENT_TAGS), LIAB_CURRENT_TAGS)
+    liab_lt_label, liab_lt_map = merge_by_preference(build_tag_maps(cf, LIAB_LT_TAGS), LIAB_LT_TAGS)
+    inv_label, inv_map = merge_by_preference(build_tag_maps(cf, INVENTORIES_TAGS), INVENTORIES_TAGS)
+    ar_label, ar_map = merge_by_preference(build_tag_maps(cf, AR_TAGS), AR_TAGS)
+    ap_label, ap_map = merge_by_preference(build_tag_maps(cf, AP_TAGS), AP_TAGS)
 
-    assets_maps = build_tag_maps(cf, ASSETS_TAGS)
-    assets_maps, assets_maps = merge_by_preference(assets_maps,ASSETS_TAGS)
-
-    equity_maps = build_tag_maps(cf, EQUITY_TAGS)
-    equity_label, equity_maps = merge_by_preference(equity_maps, EQUITY_TAGS)
-
-    # 3) Cash+STI: choose longer of aggregate vs sum(components)
+    # 5) Cash + STI (choose aggregate vs sum-of-components)
     cash_sti_label, cash_sti_map = merge_by_preference(build_tag_maps(cf, CASH_STI_AGG), CASH_STI_AGG)
     cash_only_label, cash_only_map = merge_by_preference(build_tag_maps(cf, CASH_ONLY), CASH_ONLY)
     sti_only_label, sti_only_map = merge_by_preference(build_tag_maps(cf, STI_ONLY), STI_ONLY)
@@ -218,7 +239,7 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
         cash_sti_label = f"{cash_only_label}+{sti_only_label} (summed)"
         cash_sti_map = comp_sum_map
 
-    # 4) Debt: choose longer of aggregate vs current+long-term
+    # 6) Debt (choose aggregate vs current+long-term)
     debt_label, debt_map = merge_by_preference(build_tag_maps(cf, DEBT_AGG), DEBT_AGG)
     cur_label, cur_map = merge_by_preference(build_tag_maps(cf, DEBT_CURRENT), DEBT_CURRENT)
     lt_label, lt_map = merge_by_preference(build_tag_maps(cf, DEBT_LT), DEBT_LT)
@@ -227,98 +248,136 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
         debt_label = f"{cur_label}+{lt_label} (summed)"
         debt_map = debt_comp_map
 
-    # 5) OCF, CapEx, Shares (simple merge-by-preference)
-    ocf_maps = build_tag_maps(cf, OCF_TAGS)
-    ocf_label, ocf_map = merge_by_preference(ocf_maps, OCF_TAGS)
+    # 7) Cash flow extras
+    ocf_label, ocf_map = merge_by_preference(build_tag_maps(cf, OCF_TAGS), OCF_TAGS)
+    capex_label, capex_map = merge_by_preference(build_tag_maps(cf, CAPEX_TAGS), CAPEX_TAGS)
+    dep_label, dep_map = merge_by_preference(build_tag_maps(cf, DEP_AMORT_TAGS), DEP_AMORT_TAGS)
+    sbc_label, sbc_map = merge_by_preference(build_tag_maps(cf, SBC_TAGS), SBC_TAGS)
+    div_label, div_map = merge_by_preference(build_tag_maps(cf, DIVIDENDS_TAGS), DIVIDENDS_TAGS)
+    rep_label, rep_map = merge_by_preference(build_tag_maps(cf, REPURCHASE_TAGS), REPURCHASE_TAGS)
 
-    capex_maps = build_tag_maps(cf, CAPEX_TAGS)
-    capex_label, capex_map = merge_by_preference(capex_maps, CAPEX_TAGS)
+    # 8) Shares
+    shares_label, shares_map = merge_by_preference(build_tag_maps(cf, SHARES_TAGS), SHARES_TAGS)
 
-
-    shares_maps = build_tag_maps(cf, SHARES_TAGS)
-    shares_label, shares_map = merge_by_preference(shares_maps, SHARES_TAGS)
-
+    # Debug print summary
     if debug:
         print(
             f"[watchTower] {company.ticker}: chosen -> "
             f"revenue=[{rev_label}] {len(rev_map)}y, "
             f"ni=[{ni_label}] {len(ni_map)}y, "
-            f"cash+sti=[{cash_sti_label}] {len(cash_sti_map)}y, "
-            f"debt=[{debt_label}] {len(debt_map)}y, "
+            f"cogs=[{cogs_label}] {len(cogs_map)}y, "
+            f"rnd=[{rnd_label}] {len(rnd_map)}y, "
+            f"sga=[{sga_label}] {len(sga_map)}y, "
+            f"int=[{int_label}] {len(int_map)}y, "
+            f"tax=[{tax_label}] {len(tax_map)}y, "
+            f"assets=[{assets_label}] {len(assets_map)}y, "
+            f"equity=[{equity_label}] {len(equity_map)}y, "
+            f"liab_cur=[{liab_cur_label}] {len(liab_cur_map)}y, "
+            f"liab_lt=[{liab_lt_label}] {len(liab_lt_map)}y, "
+            f"inv=[{inv_label}] {len(inv_map)}y, "
+            f"ar=[{ar_label}] {len(ar_map)}y, "
+            f"ap=[{ap_label}] {len(ap_map)}y, "
             f"ocf=[{ocf_label}] {len(ocf_map)}y, "
             f"capex=[{capex_label}] {len(capex_map)}y, "
+            f"dep=[{dep_label}] {len(dep_map)}y, "
+            f"sbc=[{sbc_label}] {len(sbc_map)}y, "
+            f"div=[{div_label}] {len(div_map)}y, "
+            f"rep=[{rep_label}] {len(rep_map)}y, "
             f"shares=[{shares_label}] {len(shares_map)}y"
-            f"gp=[{gp_label}] {len(gp_map)}y,"
-            f"op=[{op_label}] {len(op_map)}y,"
-            f" assets=[{assets_maps}] {len(assets_maps)}y, "
-            f" equity=[{equity_label}] {len(equity_maps)}y, "
-
         )
 
-    # 6) Union of all years we have for any series
+    # 9) Union of all years
     years = sorted(
-        set(rev_map)
-        | set(ni_map)
-        | set(cash_sti_map)
-        | set(debt_map)
-        | set(ocf_map)
-        | set(capex_map)
-        | set(shares_map)
-        | set(gp_map)
-        | set(op_map)
-        | set(assets_maps)
-        | set(equity_maps)
-        )
-    if debug:
-        print(f"[watchTower] {company.ticker}: candidate fiscal years: {years}")
+        set(rev_map) | set(ni_map) | set(cogs_map) | set(rnd_map) | set(sga_map) |
+        set(int_map) | set(tax_map) | set(gp_map) | set(op_map) |
+        set(assets_map) | set(equity_map) | set(liab_cur_map) | set(liab_lt_map) |
+        set(inv_map) | set(ar_map) | set(ap_map) |
+        set(cash_sti_map) | set(debt_map) |
+        set(ocf_map) | set(capex_map) | set(dep_map) | set(sbc_map) | set(div_map) | set(rep_map) |
+        set(shares_map)
+    )
     if not years:
         return 0
 
-    # 7) Upsert each year into financials_annual
+    # 10) Upsert rows
     rows_written = 0
     for y in years:
         values = {
             "company_id": company.id,
             "fiscal_year": int(y),
             "fiscal_period": "FY",
+            "source": "sec",
+
+            # Income Statement
             "revenue": rev_map.get(y),
+            "cost_of_revenue": cogs_map.get(y),
+            "gross_profit": gp_map.get(y),
+            "research_and_development": rnd_map.get(y),
+            "selling_general_admin": sga_map.get(y),
+            "operating_income": op_map.get(y),
+            "interest_expense": int_map.get(y),
+            "income_tax_expense": tax_map.get(y),
             "net_income": ni_map.get(y),
+
+            # Balance Sheet
+            "assets_total": assets_map.get(y),
+            "liabilities_current": liab_cur_map.get(y),
+            "liabilities_longterm": liab_lt_map.get(y),
+            "equity_total": equity_map.get(y),
+            "inventories": inv_map.get(y),
+            "accounts_receivable": ar_map.get(y),
+            "accounts_payable": ap_map.get(y),
             "cash_and_sti": cash_sti_map.get(y),
             "total_debt": debt_map.get(y),
-            "cfo": ocf_map.get(y),                 # <-- was operating_cash_flow
-            "capex": capex_map.get(y),             # <-- was capital_expenditures
             "shares_outstanding": shares_map.get(y),
-            "source": "sec",
-            "gross_profit": gp_map.get(y),
-            "operating_income": op_map.get(y),
-            "assets_total": assets_maps.get(y),
-            "equity_total": equity_maps.get(y),
-                    }
 
-        ins = pg_insert(FinancialAnnual).values(**values)
+            # Cash Flow
+            "cfo": ocf_map.get(y),
+            "capex": capex_map.get(y),
+            "depreciation_amortization": dep_map.get(y),
+            "share_based_comp": sbc_map.get(y),
+            "dividends_paid": div_map.get(y),
+            "share_repurchases": rep_map.get(y),
+        }
+
         stmt = pg_insert(FinancialAnnual).values(**values)
-        stmt = stmt.on_conflict_do_update( 
+        stmt = stmt.on_conflict_do_update(
             index_elements=[FinancialAnnual.company_id, FinancialAnnual.fiscal_year],
-            set_={
-                "revenue": ins.excluded.revenue,
-                "net_income": ins.excluded.net_income,
-                "cash_and_sti": ins.excluded.cash_and_sti,
-                "total_debt": ins.excluded.total_debt,
-                "cfo": ins.excluded.cfo,
-                "capex": ins.excluded.capex,
-                "shares_outstanding": ins.excluded.shares_outstanding,
-                "source": ins.excluded.source,
-                "gross_profit": ins.excluded.gross_profit,
-                "operating_income": ins.excluded.operating_income,
-                "assets_total": ins.excluded.assets_total,
-                "equity_total": ins.excluded.equity_total,
-            },
+              set_={
+                "revenue": stmt.excluded.revenue,
+                "net_income": stmt.excluded.net_income,
+                "cash_and_sti": stmt.excluded.cash_and_sti,
+                "total_debt": stmt.excluded.total_debt,
+                "cfo": stmt.excluded.cfo,
+                "capex": stmt.excluded.capex,
+                "shares_outstanding": stmt.excluded.shares_outstanding,
+                "gross_profit": stmt.excluded.gross_profit,
+                "operating_income": stmt.excluded.operating_income,
+                "assets_total": stmt.excluded.assets_total,
+                "equity_total": stmt.excluded.equity_total,
+                "cost_of_revenue": stmt.excluded.cost_of_revenue,
+                "research_and_development": stmt.excluded.research_and_development,
+                "selling_general_admin": stmt.excluded.selling_general_admin,
+                "interest_expense": stmt.excluded.interest_expense,
+                "income_tax_expense": stmt.excluded.income_tax_expense,
+                "liabilities_current": stmt.excluded.liabilities_current,
+                "liabilities_longterm": stmt.excluded.liabilities_longterm,
+                "inventories": stmt.excluded.inventories,
+                "accounts_receivable": stmt.excluded.accounts_receivable,
+                "accounts_payable": stmt.excluded.accounts_payable,
+                "depreciation_amortization": stmt.excluded.depreciation_amortization,
+                "share_based_comp": stmt.excluded.share_based_comp,
+                "dividends_paid": stmt.excluded.dividends_paid,
+                "share_repurchases": stmt.excluded.share_repurchases,
+                "source": stmt.excluded.source,
+              },
         )
         db.execute(stmt)
         rows_written += 1
 
     db.commit()
     return rows_written
+
 
 # Update company description:
 
@@ -378,13 +437,7 @@ def backfill_descriptions(db: Session):
         time.sleep(15)
 
 
-    db.execute(
-    Company.__table__.update()
-    .where(Company.id == co.id)
-    .values(description=desc)
-    )
 
-    db.commit()
 
 
 # ----------------------------
