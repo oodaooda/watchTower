@@ -49,6 +49,7 @@ class Company(Base):
     track_reason = Column(String, nullable=True)
     tracked_since = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+    description = Column(String, nullable=True)
 
 
 

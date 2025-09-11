@@ -8,6 +8,7 @@ type ScreenRow = {
   ticker: string;
   name: string;
   industry?: string | null;
+  description?: string | null;
   fiscal_year?: number | null;
   pe_ttm?: number | null;
   cash_debt_ratio?: number | null;

@@ -513,3 +513,76 @@ sudo systemctl restart docker
 ## License
 
 MIT (or your preferred license).
+
+
+Todo List: 
+
+Company Header (Simple)
+
+Show:
+
+Company Name
+
+Ticker Symbol
+
+Company Description (from SEC company_tickers.json or an added field in your DB).
+
+Negative Values in Red (Simple)
+
+Apply a conditional CSS class for <td> values < 0.
+
+Example: className={value < 0 ? "text-red-500" : ""}
+
+Net Income Formatting (Subtotal style)
+
+Bold and maybe a top/bottom border (like financial statements).
+
+Example: font-bold border-t-2 border-zinc-400.
+
+Expanded Income Statement Line Items
+
+Add more from EDGAR (via PREFERRED_TAGS):
+
+Cost of Revenue (COGS)
+
+R&D Expense
+
+SG&A Expense
+
+Interest Expense
+
+Income Tax Expense
+
+Quarterly / Yearly Toggle
+
+Add a UI toggle: “Annual” | “Quarterly”.
+
+Annual: show up to 20 years.
+
+Quarterly: show 8 quarters (2 years).
+
+Backend: update /company/{id}/financials?period=annual|quarterly.
+
+Frontend: switch table rendering based on period.
+
+Subtotals and Derived Values
+
+Expenses (Revenue – Net Income).
+
+Margins (Operating Margin %, Net Margin %).
+
+Derived Free Cash Flow (already done).
+
+Suggested Implementation Order
+
+Company Header (super quick, just fetch from /companies).
+
+Negative Values in Red (CSS tweak).
+
+Net Income Formatting (CSS tweak).
+
+Quarterly/Yearly Toggle (small backend + frontend changes).
+
+Expanded Income Statement Items (extend PREFERRED_TAGS, DB schema, ETL).
+
+Subtotals & Derived Values (compute at transform layer, return in API).

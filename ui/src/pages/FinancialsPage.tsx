@@ -1,28 +1,29 @@
-// ui/src/pages/FinancialsPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 type Row = {
   fiscal_year: number;
-
-  // Income Statement
   revenue?: number | null;
   gross_profit?: number | null;
   operating_income?: number | null;
   net_income?: number | null;
   eps_diluted?: number | null;
-
-  // Balance Sheet
   assets_total?: number | null;
   equity_total?: number | null;
   cash_and_sti?: number | null;
   total_debt?: number | null;
   shares_outstanding?: number | null;
-
-  // Cash Flow
   cfo?: number | null;
   capex?: number | null;
   fcf?: number | null;
+};
+
+// 🔹 NEW: company info type
+type Company = {
+  id: number;
+  ticker: string;
+  name: string;
+  description?: string | null;
 };
 
 const API = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
@@ -42,7 +43,6 @@ function formatNum(v?: number | null, opts: Intl.NumberFormatOptions = {}) {
   return fmt.format(v);
 }
 
-// measure container for fluid widths
 function useContainerWidth<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [w, setW] = useState(0);
@@ -62,6 +62,19 @@ export default function FinancialsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // 🔹 NEW: company state
+  const [company, setCompany] = useState<Company | null>(null);
+
+  // fetch company details
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`${API}/companies/${companyId}`)
+      .then((r) => r.json())
+      .then(setCompany)
+      .catch(() => setCompany(null));
+  }, [companyId]);
+
+  // fetch financials
   useEffect(() => {
     if (!companyId) return;
     let alive = true;
@@ -83,12 +96,9 @@ export default function FinancialsPage() {
   }, [companyId]);
 
   const fiscalYears = useMemo(() => rows.map((r) => r.fiscal_year), [rows]);
-
-  // quick access map + value helper
   const byYear = useMemo(() => new Map(rows.map((r) => [r.fiscal_year, r])), [rows]);
   const val = (y: number, k: keyof Row) => (byYear.get(y) as any)?.[k] as number | null | undefined;
 
-  // derived expenses (no DB change)
   const cogs = (y: number) => {
     const rev = val(y, "revenue");
     const gp = val(y, "gross_profit");
@@ -102,7 +112,6 @@ export default function FinancialsPage() {
     return (gp as number) - (op as number);
   };
 
-  // sections config
   const sections = [
     {
       title: "Income Statement",
@@ -116,7 +125,8 @@ export default function FinancialsPage() {
         {
           key: "eps_diluted",
           label: "EPS (Diluted, proxy)",
-          fmt: (v?: number | null) => formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
+          fmt: (v?: number | null) =>
+            formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
         },
       ],
     },
@@ -138,29 +148,52 @@ export default function FinancialsPage() {
         {
           key: "shares_outstanding",
           label: "Shares Outstanding",
-          // compact to avoid wrapping long integers
-          fmt: (v?: number | null) => formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
+          fmt: (v?: number | null) =>
+            formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
         },
       ],
     },
   ] as const;
 
-  // ===== Fluid sizing (full width) =====
   const { ref: outerRef, w: wrapW } = useContainerWidth<HTMLDivElement>();
-  // left column ~22% of width, clamped
   const leftW = Math.round(Math.min(360, Math.max(220, wrapW * 0.22)));
-  // remaining width divided by years, clamped
   const yearsCount = fiscalYears.length || 1;
   const yearW = Math.round(Math.min(160, Math.max(60, (wrapW - leftW) / yearsCount)));
 
   return (
-    <div ref={outerRef} className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4 space-y-3">
+    <div
+      ref={outerRef}
+      className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4 space-y-3"
+    >
       {/* Back to Screener */}
       <div className="flex items-center justify-between">
-        <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
+        <button
+          className={btn}
+          onClick={() => navigate("/")}
+          aria-label="Back to Screener"
+        >
           ← Back to Screener
         </button>
       </div>
+
+      {/* 🔹 Company header block */}
+      {company && (
+        <div className="flex flex-col md:flex-row md:items-start md:space-x-6 mb-6">
+          <div className="shrink-0">
+            <h1 className="text-2xl font-bold">
+              {company.name}{" "}
+              <span className="text-zinc-500">({company.ticker})</span>
+            </h1>
+          </div>
+          {company.description && (
+            <div className="flex-1">
+              <p className="text-sm text-zinc-500 leading-relaxed">
+                {company.description}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="text-sm text-zinc-500">Loading…</div>
@@ -169,7 +202,6 @@ export default function FinancialsPage() {
       ) : (
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
           <table className="w-full table-fixed text-[12px]">
-            {/* dynamic column widths */}
             <colgroup>
               <col style={{ width: leftW }} />
               {fiscalYears.map((y) => (
@@ -215,11 +247,15 @@ function FragmentSection({
   val,
 }: {
   title: string;
-  lines: Array<{ key: string; label: string; source?: (y: number) => number | null; fmt?: (v?: number | null) => string }>;
+  lines: Array<{
+    key: string;
+    label: string;
+    source?: (y: number) => number | null;
+    fmt?: (v?: number | null) => string;
+  }>;
   fiscalYears: number[];
   val: (y: number, k: keyof Row) => number | null | undefined;
 }) {
-  // local derived helpers for this section
   const cogs = (y: number, get: typeof val) => {
     const rev = get(y, "revenue");
     const gp = get(y, "gross_profit");
@@ -234,11 +270,14 @@ function FragmentSection({
   };
 
   const resolve = (lnKey: string, y: number) =>
-    lnKey === "cogs" ? cogs(y, val) : lnKey === "opex" ? opex(y, val) : val(y, lnKey as keyof Row);
+    lnKey === "cogs"
+      ? cogs(y, val)
+      : lnKey === "opex"
+      ? opex(y, val)
+      : val(y, lnKey as keyof Row);
 
   return (
     <>
-      {/* section header */}
       <tr>
         <td
           colSpan={9999}
@@ -247,8 +286,6 @@ function FragmentSection({
           {title}
         </td>
       </tr>
-
-      {/* section rows */}
       {lines.map((ln) => (
         <tr key={title + ln.key}>
           <td className="sticky left-0 bg-white dark:bg-zinc-950 px-3 py-2 text-[12px] leading-5 align-middle">

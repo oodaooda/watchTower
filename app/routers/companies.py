@@ -1,10 +1,11 @@
 # app/routers/companies.py
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, HTTPException, Path
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from app.core.db import get_db
 from app.core.models import Company
+from app.core.schemas import CompanyOut
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -44,7 +45,19 @@ def list_companies(
                 "name": co.name,
                 "industry": co.industry_name,
                 "sic": co.sic,
+                "description": co.description,
             }
             for co in rows
         ],
     }
+
+
+@router.get("/{company_id}", response_model=CompanyOut)
+def get_company(
+    company_id: int = Path(..., description="Numeric company primary key (companies.id)"),
+    db: Session = Depends(get_db),
+):
+    co = db.get(Company, company_id)
+    if not co:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return CompanyOut.model_validate(co)

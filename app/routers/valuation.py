@@ -65,6 +65,61 @@ def _coalesce(*vals):
             return v
     return None
 
+# ---------------- shared helper ----------------
+
+def compute_quick_valuation(db: Session, company: Company,
+                            years: int = 10,
+                            discount_rate: float = 0.10,
+                            start_growth: float = 0.05,
+                            terminal_growth: float = 0.025):
+    """Compute fair value and upside for one company (quick DCF).
+       Returns dict with price, fvps, upside — or None if data missing.
+    """
+    from .valuation import latest_price_row, latest_financials_with_fcf, _coalesce
+
+    pr = latest_price_row(db, company.id)
+    price = float(pr.close_price) if (pr and pr.close_price is not None) else None
+
+    fa = latest_financials_with_fcf(db, company.id)
+    if not fa:
+        return {"price": price, "fair_value_per_share": None, "upside_vs_price": None}
+
+    ocf   = _coalesce(getattr(fa, "cfo", None), getattr(fa, "operating_cash_flow", None))
+    capex = _coalesce(getattr(fa, "capex", None), getattr(fa, "capital_expenditures", None))
+    if ocf is None or capex is None:
+        return {"price": price, "fair_value_per_share": None, "upside_vs_price": None}
+
+    base_fcf = float(ocf) - float(capex)
+    cash   = float(fa.cash_and_sti or 0.0)
+    debt   = float(fa.total_debt or 0.0)
+    shares = float(fa.shares_outstanding or 0.0) or None
+
+    # --- quick DCF as in /summary ---
+    g = start_growth
+    fade = (terminal_growth - start_growth) / max(years - 1, 1)
+    fcf = base_fcf
+    pv_total = 0.0
+    for k in range(1, years + 1):
+        if k == 1:
+            fcf = base_fcf * (1 + g)
+        else:
+            g = g + fade
+            fcf = fcf * (1 + g)
+        df = 1.0 / ((1 + discount_rate) ** k)
+        pv_total += fcf * df
+
+    gT = terminal_growth
+    terminal = fcf * (1 + gT) / (discount_rate - gT)
+    pv_terminal = terminal / ((1 + discount_rate) ** years)
+
+    enterprise_value = pv_total + pv_terminal
+    equity_value = enterprise_value + cash - debt
+    fvps = (equity_value / shares) if shares else None
+    upside = (((fvps - price) / price) if (fvps is not None and price) else None)
+
+    return {"price": price, "fair_value_per_share": fvps, "upside_vs_price": upside}
+
+
 # -------------- /valuation/dcf --------------
 
 @router.get("/dcf")

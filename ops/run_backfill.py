@@ -21,9 +21,11 @@ import argparse
 import time
 from typing import Dict, List, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
+from app.core.config import settings
+
 
 from app.core.db import SessionLocal
 from app.core.models import Company, FinancialAnnual
@@ -32,6 +34,9 @@ from app.etl.sec_fetch_companyfacts import (
     extract_annual_usd_facts,
     list_available_tags,
 )
+
+import requests
+
 
 # ----------------------------
 # Tag preference lists (ordered by desirability)
@@ -315,6 +320,73 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     db.commit()
     return rows_written
 
+# Update company description:
+
+ALPHA_OVERVIEW_URL = "https://www.alphavantage.co/query?function=OVERVIEW&symbol={sym}&apikey={key}"
+
+def fetch_company_overview(symbol: str) -> dict | None:
+    if not settings.alpha_vantage_api_key:
+        return None
+
+    # Fix: Alpha Vantage uses "." instead of "-" for class shares
+    symbol = symbol.replace("-", ".")
+
+    url = ALPHA_OVERVIEW_URL.format(sym=symbol, key=settings.alpha_vantage_api_key)
+    try:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        # If no Description is returned, log and return None
+        if not data or "Description" not in data:
+            print(f"[overview] No description found for {symbol}")
+            return None
+
+        return data
+    except Exception as e:
+        print(f"[overview] Error fetching {symbol}: {e}")
+        return None
+
+
+def backfill_descriptions(db: Session):
+    cos = db.query(Company).filter(
+        Company.is_tracked == True,
+        or_(Company.description.is_(None), Company.description == "")
+    ).all()
+    print(f"[overview] Found {len(cos)} companies missing descriptions")
+
+    for co in cos:
+        overview = fetch_company_overview(co.ticker)
+        if overview and "Description" in overview:
+            desc = overview["Description"].strip()
+            if desc:
+                # 🔹 Use raw SQL update instead of ORM state
+                db.execute(
+                    Company.__table__.update()
+                    .where(Company.id == co.id)
+                    .values(description=desc)
+                )
+                db.commit()  # commit after each update so it persists immediately
+
+                print(f"[overview] Saved {co.ticker}: {desc[:40]}...")
+            else:
+                print(f"[overview] {co.ticker}: Description empty from Alpha Vantage")
+        else:
+            print(f"[overview] {co.ticker}: No Description field in response")
+
+        # respect free tier limit (1 request every 12-15s)
+        time.sleep(15)
+
+
+    db.execute(
+    Company.__table__.update()
+    .where(Company.id == co.id)
+    .values(description=desc)
+    )
+
+    db.commit()
+
+
 # ----------------------------
 # CLI
 # ----------------------------
@@ -344,8 +416,16 @@ def main() -> None:
             time.sleep(0.5)  # polite to SEC
             total += n
         print(f"[watchTower] Done. Total years written: {total}")
+
+        # 🔹 NEW: backfill descriptions
+        backfill_descriptions(db)
+        print(f"[overview] Company descriptions updated")
+
     finally:
         db.close()
+
+
+
 
 
 if __name__ == "__main__":

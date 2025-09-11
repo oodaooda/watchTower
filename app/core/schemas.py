@@ -17,8 +17,9 @@ class CompanyOut(BaseModel):
     industry_name: Optional[str] = None
     exchange: Optional[str] = None
     status: Optional[str] = None
-
+    description: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
+
 
 # ---------- Screening ----------
 class ScreenResultItem(BaseModel):
@@ -47,14 +48,12 @@ class FinancialAnnualOut(BaseModel):
     operating_income: Optional[float] = None
     net_income: Optional[float] = None
     eps_diluted: Optional[float] = None
-
     # Balance Sheet
     assets_total: Optional[float] = None
     equity_total: Optional[float] = None
     cash_and_sti: Optional[float] = None
     total_debt: Optional[float] = None
     shares_outstanding: Optional[float] = None
-
     # Cash Flow
     cfo: Optional[float] = None
     capex: Optional[float] = None

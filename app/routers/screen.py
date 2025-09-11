@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.models import Company, MetricsAnnual, PriceAnnual, FinancialAnnual
+from app.routers.valuation import compute_quick_valuation
+
 
 router = APIRouter(prefix="/screen", tags=["screen"])
-
 
 @router.get("")
 def run_screen(
@@ -87,6 +88,7 @@ def run_screen(
         c.ticker.label("ticker"),
         c.name.label("name"),
         c.industry_name.label("industry"),
+        c.description.label("description"),
         (m.fiscal_year if year else latest_m.c.latest_year).label("fiscal_year"),
         cast(m.cash_debt_ratio, Float).label("cash_debt_ratio"),
         m.growth_consistency.label("growth_consistency"),
@@ -207,4 +209,7 @@ def run_screen(
 
     # --- Execute
     rows = db.execute(stmt).mappings().all()
+
+    
+    
     return {"total_count": total_count, "items": [dict(r) for r in rows]}
