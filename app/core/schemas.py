@@ -59,6 +59,38 @@ class FinancialAnnualOut(BaseModel):
     capex: Optional[float] = None
     fcf: Optional[float] = None  # computed in the router
 
+# ---------- financial Quarterly -------
+
+class FinancialQuarterlyOut(BaseModel):
+    fiscal_year: int
+    fiscal_period: str
+    revenue: Optional[float]
+    gross_profit: Optional[float]
+    operating_income: Optional[float]
+    net_income: Optional[float]
+    eps_diluted: Optional[float] = None
+    assets_total: Optional[float]
+    equity_total: Optional[float]
+    cash_and_sti: Optional[float]
+    total_debt: Optional[float]
+    shares_outstanding: Optional[float]
+    cfo: Optional[float]
+    capex: Optional[float]
+    fcf: Optional[float]
+    depreciation_amortization: Optional[float]
+    share_based_comp: Optional[float]
+    dividends_paid: Optional[float]
+    share_repurchases: Optional[float]
+    liabilities_current: Optional[float]
+    liabilities_longterm: Optional[float]
+    inventories: Optional[float]
+    accounts_receivable: Optional[float]
+    accounts_payable: Optional[float]
+
+    class Config:
+        orm_mode = True
+
+
 # ---------- Metrics ----------
 class MetricsAnnualOut(BaseModel):
     fiscal_year: int

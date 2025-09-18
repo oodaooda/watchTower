@@ -18,8 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.models import FinancialAnnual
-from app.core.schemas import FinancialAnnualOut
+from app.core.models import FinancialAnnual, FinancialQuarterly
+from app.core.schemas import FinancialAnnualOut, FinancialQuarterlyOut
 
 router = APIRouter()
 
@@ -31,6 +31,19 @@ def _coalesce(*vals):
         if v is not None:
             return v
     return None
+
+
+
+@router.get("/quarterly/{company_id}", response_model=List[FinancialQuarterlyOut])
+def get_quarterly(company_id: int, db: Session = Depends(get_db)):
+    q = (
+        select(FinancialQuarterly)
+        .where(FinancialQuarterly.company_id == company_id)
+        .order_by(FinancialQuarterly.fiscal_year.desc(), FinancialQuarterly.fiscal_period.desc())
+        .limit(16)
+    )
+    rows = db.scalars(q).all()
+    return list(reversed(rows))  # oldest -> newest
 
 @router.get("/{company_id}", response_model=List[FinancialAnnualOut])
 def company_financials(

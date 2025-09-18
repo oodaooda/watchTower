@@ -517,19 +517,34 @@ MIT (or your preferred license).
 
 Todo List: 
 
+Suggested Implementation Order
+
+x Company Header (super quick, just fetch from /companies).
+
+x Negative Values in Red (CSS tweak).
+
+x Net Income Formatting (CSS tweak).
+
+Quarterly/Yearly Toggle (small backend + frontend changes).
+
+Expanded Income Statement Items (extend PREFERRED_TAGS, DB schema, ETL).
+
+Subtotals & Derived Values (compute at transform layer, return in API).
+
+
 Company Header (Simple)
 
 Show:
 
-Company Name
+x Company Name
 
-Ticker Symbol
+x Ticker Symbol
 
-Company Description (from SEC company_tickers.json or an added field in your DB).
+x Company Description (from SEC company_tickers.json or an added field in your DB).
 
-Negative Values in Red (Simple)
+x Negative Values in Red (Simple)
 
-Apply a conditional CSS class for <td> values < 0.
+x Apply a conditional CSS class for <td> values < 0.
 
 Example: className={value < 0 ? "text-red-500" : ""}
 

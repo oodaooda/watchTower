@@ -172,6 +172,19 @@ def extract_annual_usd_facts(cf: Dict[str, Any], tag: str) -> List[dict]:
     # return sorted by year
     return [out[y] for y in sorted(out.keys())]
 
+def extract_quarterly_usd_facts(cf: dict, tag: str) -> list[dict]:
+    """Extract quarterly USD facts for a given tag."""
+    items = []
+    if "facts" not in cf: return items
+    usgaap = cf.get("facts", {}).get("us-gaap", {})
+    if tag not in usgaap: return items
+    for unit, data in usgaap[tag].get("units", {}).items():
+        if unit != "USD": continue
+        for x in data:
+            if x.get("fy") and x.get("fp") and x.get("val") is not None:
+                items.append(x)
+    return items
+
 
 # -----------------------------
 # (Optional) quick tag discovery helper for debugging

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 
 type Row = {
   fiscal_year: number;
+  fiscal_period?: string | null; // Q1–Q4 when quarterly
   revenue?: number | null;
   gross_profit?: number | null;
   operating_income?: number | null;
@@ -16,9 +17,18 @@ type Row = {
   cfo?: number | null;
   capex?: number | null;
   fcf?: number | null;
+  depreciation_amortization?: number | null;
+  share_based_comp?: number | null;
+  dividends_paid?: number | null;
+  share_repurchases?: number | null;
+  liabilities_current?: number | null;
+  liabilities_longterm?: number | null;
+  inventories?: number | null;
+  accounts_receivable?: number | null;
+  accounts_payable?: number | null;
 };
 
-// 🔹 NEW: company info type
+// 🔹 Company info type
 type Company = {
   id: number;
   ticker: string;
@@ -61,8 +71,9 @@ export default function FinancialsPage() {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"annual" | "quarterly">("annual");
 
-  // 🔹 NEW: company state
+  // 🔹 Company state
   const [company, setCompany] = useState<Company | null>(null);
 
   // fetch company details
@@ -74,16 +85,33 @@ export default function FinancialsPage() {
       .catch(() => setCompany(null));
   }, [companyId]);
 
-  // fetch financials
+  // fetch financials (annual vs quarterly)
   useEffect(() => {
     if (!companyId) return;
     let alive = true;
     (async () => {
       setLoading(true);
       try {
-        const r = await fetch(`${API}/financials/${companyId}`);
-        const data: Row[] = await r.json();
-        if (alive) setRows((data || []).sort((a, b) => a.fiscal_year - b.fiscal_year));
+        const endpoint =
+          mode === "annual"
+            ? `${API}/financials/${companyId}`
+            : `${API}/financials/quarterly/${companyId}`;
+        const r = await fetch(endpoint);
+        let data: Row[] = await r.json();
+
+        // 🔹 sort
+        data = (data || []).sort(
+          (a, b) =>
+            a.fiscal_year - b.fiscal_year ||
+            (a.fiscal_period || "").localeCompare(b.fiscal_period || "")
+        );
+
+        // 🔹 keep only last 16 quarters (~4 years)
+        if (mode === "quarterly") {
+          data = data.slice(-16);
+        }
+
+        if (alive) setRows(data);
       } catch {
         if (alive) setRows([]);
       } finally {
@@ -93,86 +121,77 @@ export default function FinancialsPage() {
     return () => {
       alive = false;
     };
-  }, [companyId]);
+  }, [companyId, mode]);
 
   const fiscalYears = useMemo(() => rows.map((r) => r.fiscal_year), [rows]);
-  const byYear = useMemo(() => new Map(rows.map((r) => [r.fiscal_year, r])), [rows]);
-  const val = (y: number, k: keyof Row) => (byYear.get(y) as any)?.[k] as number | null | undefined;
+  const byYear = useMemo(
+    () => new Map(rows.map((r) => [r.fiscal_year + (r.fiscal_period ?? ""), r])),
+    [rows]
+  );
+  const val = (row: Row, k: keyof Row) =>
+    (row as any)?.[k] as number | null | undefined;
 
-  const cogs = (y: number) => {
-    const rev = val(y, "revenue");
-    const gp = val(y, "gross_profit");
-    if (rev == null || gp == null) return null;
-    return (rev as number) - (gp as number);
-  };
-  const opex = (y: number) => {
-    const gp = val(y, "gross_profit");
-    const op = val(y, "operating_income");
-    if (gp == null || op == null) return null;
-    return (gp as number) - (op as number);
-  };
-
- const sections = [
-  {
-    title: "Income Statement",
-    lines: [
-      { key: "revenue", label: "Revenue" },
-      { key: "cogs", label: "Cost of Revenue" },
-      { key: "gross_profit", label: "Gross Profit" },
-      { key: "research_and_development", label: "R&D Expense" },
-      { key: "selling_general_admin", label: "SG&A Expense" },        
-      { key: "operating_income", label: "Operating Income" },
-      { key: "opex", label: "Operating Expenses (derived)", source: opex },
-      { key: "net_income", label: "Net Income" },
-      { key: "interest_expense", label: "Interest Expense" },
-      { key: "income_tax_expense", label: "Tax Expense" },
-      {
-        key: "eps_diluted",
-        label: "EPS (Diluted, proxy)",
-        fmt: (v?: number | null) =>
-          formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
-      },
-    ],
-  },
-  {
-    title: "Cash Flow",
-    lines: [
-      { key: "cfo", label: "Cash From Operations (CFO)" },
-      { key: "capex", label: "Capital Expenditures (CapEx)" },
-      { key: "depreciation_amortization", label: "Depreciation & Amortization" },
-      { key: "share_based_comp", label: "Share-based Compensation" },
-      { key: "dividends_paid", label: "Dividends Paid" },
-      { key: "share_repurchases", label: "Share Repurchases" },
-      { key: "fcf", label: "Free Cash Flow (FCF)" },
-    ],
-  },
-  {
-    title: "Balance Sheet",
-    lines: [
-      { key: "assets_total", label: "Total Assets" },
-      { key: "liabilities_current", label: "Current Liabilities" },
-      { key: "liabilities_longterm", label: "Long-Term Liabilities" },
-      { key: "equity_total", label: "Total Equity" },
-      { key: "cash_and_sti", label: "Cash & Short-Term Investments" },
-      { key: "total_debt", label: "Total Debt" },
-      { key: "inventories", label: "Inventories" },
-      { key: "accounts_receivable", label: "Accounts Receivable" },
-      { key: "accounts_payable", label: "Accounts Payable" },
-      {
-        key: "shares_outstanding",
-        label: "Shares Outstanding",
-        fmt: (v?: number | null) =>
-          formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
-      },
-    ],
-  },
-] as const;
-
+  const sections = [
+    {
+      title: "Income Statement",
+      lines: [
+        { key: "revenue", label: "Revenue" },
+        { key: "cost_of_revenue", label: "Cost of Revenue" },
+        { key: "gross_profit", label: "Gross Profit" },
+        { key: "research_and_development", label: "R&D Expense" },
+        { key: "selling_general_admin", label: "SG&A Expense" },
+        { key: "operating_income", label: "Operating Income" },
+        { key: "net_income", label: "Net Income" },
+        { key: "interest_expense", label: "Interest Expense" },
+        { key: "income_tax_expense", label: "Tax Expense" },
+        {
+          key: "eps_diluted",
+          label: "EPS (Diluted, proxy)",
+          fmt: (v?: number | null) =>
+            formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
+        },
+      ],
+    },
+    {
+      title: "Cash Flow",
+      lines: [
+        { key: "cfo", label: "Cash From Operations (CFO)" },
+        { key: "capex", label: "Capital Expenditures (CapEx)" },
+        { key: "depreciation_amortization", label: "Depreciation & Amortization" },
+        { key: "share_based_comp", label: "Share-based Compensation" },
+        { key: "dividends_paid", label: "Dividends Paid" },
+        { key: "share_repurchases", label: "Share Repurchases" },
+        { key: "fcf", label: "Free Cash Flow (FCF)" },
+      ],
+    },
+    {
+      title: "Balance Sheet",
+      lines: [
+        { key: "assets_total", label: "Total Assets" },
+        { key: "liabilities_current", label: "Current Liabilities" },
+        { key: "liabilities_longterm", label: "Long-Term Liabilities" },
+        { key: "equity_total", label: "Total Equity" },
+        { key: "cash_and_sti", label: "Cash & Short-Term Investments" },
+        { key: "total_debt", label: "Total Debt" },
+        { key: "inventories", label: "Inventories" },
+        { key: "accounts_receivable", label: "Accounts Receivable" },
+        { key: "accounts_payable", label: "Accounts Payable" },
+        {
+          key: "shares_outstanding",
+          label: "Shares Outstanding",
+          fmt: (v?: number | null) =>
+            formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
+        },
+      ],
+    },
+  ] as const;
 
   const { ref: outerRef, w: wrapW } = useContainerWidth<HTMLDivElement>();
   const leftW = Math.round(Math.min(360, Math.max(220, wrapW * 0.22)));
-  const yearsCount = fiscalYears.length || 1;
-  const yearW = Math.round(Math.min(160, Math.max(60, (wrapW - leftW) / yearsCount)));
+  const yearsCount = rows.length || 1;
+  const yearW = Math.round(
+    Math.min(160, Math.max(60, (wrapW - leftW) / yearsCount))
+  );
 
   return (
     <div
@@ -181,16 +200,28 @@ export default function FinancialsPage() {
     >
       {/* Back to Screener */}
       <div className="flex items-center justify-between">
-        <button
-          className={btn}
-          onClick={() => navigate("/")}
-          aria-label="Back to Screener"
-        >
+        <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
           ← Back to Screener
         </button>
       </div>
 
-      {/* 🔹 Company header block */}
+      {/* Toggle Annual / Quarterly */}
+      <div className="flex space-x-2 mb-4">
+        <button
+          className={`${btn} ${mode === "annual" ? "opacity-100" : "opacity-60"}`}
+          onClick={() => setMode("annual")}
+        >
+          Annual
+        </button>
+        <button
+          className={`${btn} ${mode === "quarterly" ? "opacity-100" : "opacity-60"}`}
+          onClick={() => setMode("quarterly")}
+        >
+          Quarterly
+        </button>
+      </div>
+
+      {/* Company header */}
       {company && (
         <div className="flex flex-col md:flex-row md:items-start md:space-x-6 mb-6">
           <div className="shrink-0">
@@ -218,8 +249,8 @@ export default function FinancialsPage() {
           <table className="w-full table-fixed text-[12px]">
             <colgroup>
               <col style={{ width: leftW }} />
-              {fiscalYears.map((y) => (
-                <col key={`col-${y}`} style={{ width: yearW }} />
+              {rows.map((_, idx) => (
+                <col key={`col-${idx}`} style={{ width: yearW }} />
               ))}
             </colgroup>
 
@@ -228,11 +259,17 @@ export default function FinancialsPage() {
                 <th className="text-left font-semibold px-3 py-3 sticky left-0 bg-zinc-50 dark:bg-zinc-900/60 z-10">
                   Line Item
                 </th>
-                {fiscalYears.map((y) => (
-                  <th key={y} className="text-right font-semibold px-3 py-3">
-                    <span className="tabular-nums">{y}</span>
-                  </th>
-                ))}
+                {rows.map((row, idx) => {
+                  const label =
+                    mode === "quarterly"
+                      ? `${row.fiscal_year} ${row.fiscal_period}` // Q1–Q4
+                      : `FY ${row.fiscal_year}`; // Annual totals
+                  return (
+                    <th key={idx} className="text-right font-semibold px-3 py-3">
+                      <span className="tabular-nums">{label}</span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
 
@@ -242,7 +279,7 @@ export default function FinancialsPage() {
                   key={sec.title}
                   title={sec.title}
                   lines={sec.lines as any}
-                  fiscalYears={fiscalYears}
+                  rows={rows}
                   val={val}
                 />
               ))}
@@ -257,42 +294,20 @@ export default function FinancialsPage() {
 function FragmentSection({
   title,
   lines,
-  fiscalYears,
+  rows,
   val,
 }: {
   title: string;
   lines: Array<{
     key: string;
     label: string;
-    source?: (y: number) => number | null;
     fmt?: (v?: number | null) => string;
   }>;
-  fiscalYears: number[];
-  val: (y: number, k: keyof Row) => number | null | undefined;
+  rows: Row[];
+  val: (row: Row, k: keyof Row) => number | null | undefined;
 }) {
-  const cogs = (y: number, get: typeof val) => {
-    const rev = get(y, "revenue");
-    const gp = get(y, "gross_profit");
-    if (rev == null || gp == null) return null;
-    return (rev as number) - (gp as number);
-  };
-  const opex = (y: number, get: typeof val) => {
-    const gp = get(y, "gross_profit");
-    const op = get(y, "operating_income");
-    if (gp == null || op == null) return null;
-    return (gp as number) - (op as number);
-  };
-
-  const resolve = (lnKey: string, y: number) =>
-    lnKey === "cogs"
-      ? cogs(y, val)
-      : lnKey === "opex"
-      ? opex(y, val)
-      : val(y, lnKey as keyof Row);
-
   return (
     <>
-      {/* section header */}
       <tr>
         <td
           colSpan={9999}
@@ -301,29 +316,20 @@ function FragmentSection({
           {title}
         </td>
       </tr>
-
-      {/* section rows */}
       {lines.map((ln) => (
         <tr key={title + ln.key}>
           <td className="sticky left-0 bg-white dark:bg-zinc-950 px-3 py-2 text-[12px] leading-5 align-middle">
             {ln.label}
           </td>
-          {fiscalYears.map((y) => {
-            const raw = ln.source ? ln.source(y) : resolve(ln.key, y);
-            const formatted = (ln.fmt ?? formatNum)(raw as number | null | undefined);
-
-            // highlight negatives in red
+          {rows.map((row, idx) => {
+            const raw = val(row, ln.key as keyof Row);
+            const formatted = (ln.fmt ?? formatNum)(raw);
             const isNegative = typeof raw === "number" && raw < 0;
-
-            // extra styling for Net Income (subtotal style)
             const extraClass =
-              ln.key === "net_income"
-                ? "font-bold border-t border-zinc-400"
-                : "";
-
+              ln.key === "net_income" ? "font-bold border-t border-zinc-400" : "";
             return (
               <td
-                key={`${ln.key}-${y}`}
+                key={`${ln.key}-${idx}`}
                 className={`px-3 py-2 text-[12px] leading-5 align-middle text-right font-mono tabular-nums whitespace-nowrap ${
                   isNegative ? "text-red-500" : ""
                 } ${extraClass}`}
@@ -337,4 +343,3 @@ function FragmentSection({
     </>
   );
 }
-
