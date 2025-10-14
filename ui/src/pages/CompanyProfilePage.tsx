@@ -14,6 +14,7 @@ import {
   Legend,
   BarChart,
   Bar,
+  TooltipProps,
 } from "recharts";
 
 type SeriesPoint = { fiscal_year: number; value: number | null };
@@ -147,13 +148,6 @@ const fmtTooltipDate = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
 });
-
-const fmtTooltipMonthYear = new Intl.DateTimeFormat(undefined, {
-  month: "short",
-  year: "numeric",
-});
-
-const fmtTooltipYear = new Intl.DateTimeFormat(undefined, { year: "numeric" });
 
 type MetricFormat =
   | "currency"
@@ -312,12 +306,14 @@ export default function CompanyProfilePage() {
     return priceHistory
       .filter((p) => typeof p.close === "number" && !Number.isNaN(p.close))
       .map((p) => {
-        const date = new Date(p.ts);
+        const date = parsePriceDate(p.ts);
         return {
           ts: date.getTime(),
           close: Number(p.close),
+          date,
         };
       })
+      .filter((p) => Number.isFinite(p.ts))
       .sort((a, b) => a.ts - b.ts);
   }, [priceHistory]);
 
@@ -451,28 +447,25 @@ export default function CompanyProfilePage() {
             }
           >
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={priceChartData}>
+              <LineChart data={priceChartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="4 4" className="stroke-zinc-200 dark:stroke-zinc-800" />
                 <XAxis
                   dataKey="ts"
                   type="number"
+                  scale="time"
                   domain={["dataMin", "dataMax"]}
                   tickFormatter={(value) =>
                     formatPriceTick(value as number, priceRange)
                   }
                   minTickGap={16}
                   tick={{ fontSize: 12 }}
+                  allowDuplicatedCategory={false}
                 />
                 <YAxis
                   tickFormatter={(v) => formatCompactCurrency(v as number)}
                   tick={{ fontSize: 12 }}
                 />
-                <Tooltip
-                  formatter={(value: number) => formatCompactCurrency(value)}
-                  labelFormatter={(value) =>
-                    formatPriceTooltip(value as number, priceRange)
-                  }
-                />
+                <Tooltip content={<PriceTooltip range={priceRange} />} />
                 <Line
                   type="monotone"
                   dataKey="close"
@@ -703,14 +696,20 @@ function formatPriceTooltip(value: number, range: PriceHistoryRange): string {
     case "5d":
     case "1m":
     case "ytd":
-      return fmtTooltipDate.format(date);
     case "5y":
-      return fmtTooltipMonthYear.format(date);
     case "max":
-      return fmtTooltipYear.format(date);
+      return fmtTooltipDate.format(date);
     default:
       return fmtTooltipDate.format(date);
   }
+}
+
+function parsePriceDate(ts: string): Date {
+  if (!ts) return new Date(NaN);
+  if (ts.endsWith("Z") || ts.includes("+")) return new Date(ts);
+  if (ts.includes("T")) return new Date(ts);
+  if (ts.includes(" ")) return new Date(ts.replace(" ", "T"));
+  return new Date(`${ts}T00:00:00`);
 }
 
 function MetricCard({
@@ -785,6 +784,31 @@ function ChartCard({
           No data available.
         </div>
       )}
+    </div>
+  );
+}
+
+type PriceTooltipPropsEx = TooltipProps<number, string> & { range: PriceHistoryRange };
+
+function PriceTooltip({ active, payload, range }: PriceTooltipPropsEx) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0];
+  if (typeof point.value !== "number") return null;
+  const ts = point.payload?.date instanceof Date
+    ? point.payload.date.getTime()
+    : typeof point.payload?.ts === "number"
+    ? point.payload.ts
+    : Number(point.payload?.ts ?? 0);
+
+  if (!Number.isFinite(ts)) return null;
+
+  const dateLabel = formatPriceTooltip(ts, range);
+  const priceLabel = currencyFullFmt.format(point.value);
+
+  return (
+    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 shadow-sm space-y-1">
+      <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">{dateLabel}</div>
+      <div className="text-xs text-sky-600 dark:text-sky-400 font-semibold">Close: {priceLabel}</div>
     </div>
   );
 }
