@@ -203,6 +203,14 @@ export default function FinancialsPage() {
         <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
           ← Back to Screener
         </button>
+        {company ? (
+          <button
+            className={btn}
+            onClick={() => navigate(`/companies/${company.ticker}/profile`)}
+          >
+            Company Profile →
+          </button>
+        ) : null}
       </div>
 
       {/* Toggle Annual / Quarterly */}

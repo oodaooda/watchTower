@@ -4,8 +4,8 @@ These map ORM rows to API-friendly shapes.
 """
 from __future__ import annotations
 
-from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
+from typing import Optional, List, Dict
+from pydantic import BaseModel, ConfigDict, Field
 
 # ---------- Companies ----------
 class CompanyOut(BaseModel):
@@ -107,3 +107,33 @@ class DefinitionOut(BaseModel):
     key: str
     title: str
     body_md: str
+
+
+# ---------- Company Profile ----------
+class ProfileSeriesPoint(BaseModel):
+    fiscal_year: int
+    value: Optional[float] = None
+
+
+class ProfileSeries(BaseModel):
+    price: List[ProfileSeriesPoint] = Field(default_factory=list)
+    revenue: List[ProfileSeriesPoint] = Field(default_factory=list)
+    net_income: List[ProfileSeriesPoint] = Field(default_factory=list)
+    cash: List[ProfileSeriesPoint] = Field(default_factory=list)
+    debt: List[ProfileSeriesPoint] = Field(default_factory=list)
+    shares: List[ProfileSeriesPoint] = Field(default_factory=list)
+
+
+class CompanyProfileOut(BaseModel):
+    company: CompanyOut
+    latest_fiscal_year: Optional[int] = None
+    price: Optional[float] = None
+    market_cap: Optional[float] = None
+    valuation: Dict[str, Optional[float]] = Field(default_factory=dict)
+    financial_strength: Dict[str, Optional[float]] = Field(default_factory=dict)
+    profitability: Dict[str, Optional[float]] = Field(default_factory=dict)
+    growth: Dict[str, Optional[float]] = Field(default_factory=dict)
+    quality: Dict[str, Optional[float]] = Field(default_factory=dict)
+    balance_sheet: Dict[str, Optional[float]] = Field(default_factory=dict)
+    cash_flow: Dict[str, Optional[float]] = Field(default_factory=dict)
+    series: ProfileSeries = Field(default_factory=ProfileSeries)

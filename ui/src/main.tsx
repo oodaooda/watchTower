@@ -6,6 +6,7 @@ import AppShell from "./pages/AppShell";
 import Screener from "./pages/Screener";
 import CompaniesPage from "./pages/Companies";
 import FinancialsPage from "./pages/FinancialsPage";
+import CompanyProfilePage from "./pages/CompanyProfilePage";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -20,6 +21,7 @@ createRoot(document.getElementById("root")!).render(
 
           {/* Other pages (relative paths, no leading slash) */}
           <Route path="companies" element={<CompaniesPage />} />
+          <Route path="companies/:identifier/profile" element={<CompanyProfilePage />} />
           <Route path="financials/:companyId" element={<FinancialsPage />} />
 
           {/* Fallback */}

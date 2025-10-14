@@ -1,3 +1,18 @@
+# boot system:
+watchtower:
+uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+watchtower/ui:
+npm run dev
+
+database:
+docker start wt-pg
+docker ps -a
+
+# SSH Binding:
+ ssh -L 5173:localhost:5173 -L 8000:localhost:8000 ares@10.0.0.9 -p 1634
+
+
 # Start up and intial setup
 
 create database
