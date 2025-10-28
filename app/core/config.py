@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str
     alpha_vantage_api_key: str | None = None
     sec_user_agent: str
+    pharma_openai_api_key: str | None = Field(default=None, alias="PHARMA_OPENAI_API_KEY")
 
     class Config:
         env_file = ".env"            # <- load from repo root

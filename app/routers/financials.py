@@ -61,8 +61,13 @@ def company_financials(
     for r in rows:
         # --- Income Statement ---
         revenue           = _num(getattr(r, "revenue", None))
+        cost_of_revenue   = _num(getattr(r, "cost_of_revenue", None))
         gross_profit      = _num(getattr(r, "gross_profit", None))          # may not exist in table → None
+        research_and_development = _num(getattr(r, "research_and_development", None))
+        selling_general_admin    = _num(getattr(r, "selling_general_admin", None))
         operating_income  = _num(getattr(r, "operating_income", None))      # may not exist in table → None
+        interest_expense  = _num(getattr(r, "interest_expense", None))
+        income_tax_expense = _num(getattr(r, "income_tax_expense", None))
         net_income        = _num(getattr(r, "net_income", None))
 
         # Shares (diluted not explicitly modeled; use shares_outstanding proxy)
@@ -73,7 +78,12 @@ def company_financials(
 
         # --- Balance Sheet ---
         assets_total  = _num(getattr(r, "assets_total", None))              # may not exist in table → None
+        liabilities_current = _num(getattr(r, "liabilities_current", None))
+        liabilities_longterm = _num(getattr(r, "liabilities_longterm", None))
         equity_total  = _num(getattr(r, "equity_total", None))              # may not exist in table → None
+        inventories   = _num(getattr(r, "inventories", None))
+        accounts_receivable = _num(getattr(r, "accounts_receivable", None))
+        accounts_payable    = _num(getattr(r, "accounts_payable", None))
         cash_and_sti  = _num(getattr(r, "cash_and_sti", None))
         total_debt    = _num(getattr(r, "total_debt", None))
 
@@ -83,6 +93,10 @@ def company_financials(
         cfo  = _num(cfo_val)
         capex = _num(capex_val)
         fcf = (cfo - capex) if (cfo is not None and capex is not None) else None
+        depreciation_amortization = _num(getattr(r, "depreciation_amortization", None))
+        share_based_comp = _num(getattr(r, "share_based_comp", None))
+        dividends_paid = _num(getattr(r, "dividends_paid", None))
+        share_repurchases = _num(getattr(r, "share_repurchases", None))
 
         out.append(
             FinancialAnnualOut(
@@ -90,14 +104,24 @@ def company_financials(
 
                 # Income Statement
                 revenue=revenue,
+                cost_of_revenue=cost_of_revenue,
                 gross_profit=gross_profit,
+                research_and_development=research_and_development,
+                selling_general_admin=selling_general_admin,
                 operating_income=operating_income,
+                interest_expense=interest_expense,
+                income_tax_expense=income_tax_expense,
                 net_income=net_income,
                 eps_diluted=eps_diluted,
 
                 # Balance Sheet
                 assets_total=assets_total,
+                liabilities_current=liabilities_current,
+                liabilities_longterm=liabilities_longterm,
                 equity_total=equity_total,
+                inventories=inventories,
+                accounts_receivable=accounts_receivable,
+                accounts_payable=accounts_payable,
                 cash_and_sti=cash_and_sti,
                 total_debt=total_debt,
                 shares_outstanding=shares_outstanding,
@@ -106,6 +130,10 @@ def company_financials(
                 cfo=cfo,
                 capex=capex,
                 fcf=fcf,
+                depreciation_amortization=depreciation_amortization,
+                share_based_comp=share_based_comp,
+                dividends_paid=dividends_paid,
+                share_repurchases=share_repurchases,
             )
         )
 

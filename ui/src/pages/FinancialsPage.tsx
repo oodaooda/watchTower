@@ -5,8 +5,13 @@ type Row = {
   fiscal_year: number;
   fiscal_period?: string | null; // Q1–Q4 when quarterly
   revenue?: number | null;
+  cost_of_revenue?: number | null;
   gross_profit?: number | null;
+  research_and_development?: number | null;
+  selling_general_admin?: number | null;
   operating_income?: number | null;
+  interest_expense?: number | null;
+  income_tax_expense?: number | null;
   net_income?: number | null;
   eps_diluted?: number | null;
   assets_total?: number | null;
@@ -203,14 +208,24 @@ export default function FinancialsPage() {
         <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
           ← Back to Screener
         </button>
-        {company ? (
-          <button
-            className={btn}
-            onClick={() => navigate(`/companies/${company.ticker}/profile`)}
-          >
-            Company Profile →
-          </button>
-        ) : null}
+        <div className="flex gap-2">
+          {company ? (
+            <button
+              className={btn}
+              onClick={() => navigate(`/companies/${company.ticker}/profile`)}
+            >
+              Company Profile →
+            </button>
+          ) : null}
+          {company ? (
+            <button
+              className={btn}
+              onClick={() => navigate(`/pharma/${company.ticker}`)}
+            >
+              Pharma Insights →
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {/* Toggle Annual / Quarterly */}

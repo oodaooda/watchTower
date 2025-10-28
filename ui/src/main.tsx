@@ -7,6 +7,8 @@ import Screener from "./pages/Screener";
 import CompaniesPage from "./pages/Companies";
 import FinancialsPage from "./pages/FinancialsPage";
 import CompanyProfilePage from "./pages/CompanyProfilePage";
+import PharmaDashboardPage from "./pages/PharmaDashboardPage";
+import PharmaCompanyPage from "./pages/PharmaCompanyPage";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -23,6 +25,8 @@ createRoot(document.getElementById("root")!).render(
           <Route path="companies" element={<CompaniesPage />} />
           <Route path="companies/:identifier/profile" element={<CompanyProfilePage />} />
           <Route path="financials/:companyId" element={<FinancialsPage />} />
+          <Route path="pharma" element={<PharmaDashboardPage />} />
+          <Route path="pharma/:identifier" element={<PharmaCompanyPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

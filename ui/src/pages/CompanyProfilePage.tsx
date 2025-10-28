@@ -363,12 +363,20 @@ export default function CompanyProfilePage() {
             ← Back to Screener
           </button>
           {profile?.company?.id ? (
-            <button
-              className={btnGhost}
-              onClick={() => navigate(`/financials/${profile.company.id}`)}
-            >
-              ← Financials
-            </button>
+            <>
+              <button
+                className={btnGhost}
+                onClick={() => navigate(`/financials/${profile.company.id}`)}
+              >
+                ← Financials
+              </button>
+              <button
+                className={btnGhost}
+                onClick={() => navigate(`/pharma/${profile.company.ticker}`)}
+              >
+                Pharma Insights →
+              </button>
+            </>
           ) : null}
         </div>
         <form className="flex items-center gap-2" onSubmit={handleSearch}>

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi import APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import companies, screen, financials, metrics, definitions, health, valuation, industries, prices
+from app.routers import companies, screen, financials, metrics, definitions, health, valuation, industries, prices, pharma
 from app.jobs.scheduler import start_scheduler, nightly_fundamentals_job, daily_prices_job, dev_router
 
 from app.core.config import settings
@@ -40,6 +40,7 @@ app.include_router(definitions.router, prefix="/definitions", tags=["definitions
 app.include_router(valuation.router)
 app.include_router(industries.router)
 app.include_router(prices.router)
+app.include_router(pharma.router)
 app.include_router(dev_router)
 
 

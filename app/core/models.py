@@ -247,3 +247,79 @@ class FactProvenance(Base):
     __table_args__ = (
         Index("ix_prov_financial", "financial_id"),
     )
+
+
+# -------- Pharma Tracking --------
+
+class PharmaCompany(Base):
+    __tablename__ = "pharma_companies"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    ticker = Column(String, nullable=False, index=True, unique=True)
+    lead_sponsor = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    last_refreshed = Column(DateTime, nullable=True)
+    included_manually = Column(Boolean, default=False)
+
+    company = relationship("Company")
+    drugs = relationship("PharmaDrug", back_populates="pharma_company", cascade="all, delete-orphan")
+
+
+class PharmaDrug(Base):
+    __tablename__ = "pharma_drugs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pharma_company_id = Column(
+        Integer,
+        ForeignKey("pharma_companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String, nullable=False)
+    indication = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    pharma_company = relationship("PharmaCompany", back_populates="drugs")
+    trials = relationship("PharmaTrial", back_populates="drug", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("pharma_company_id", "name", name="uq_pharma_drug_company_name"),
+    )
+
+
+class PharmaTrial(Base):
+    __tablename__ = "pharma_trials"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pharma_drug_id = Column(
+        Integer,
+        ForeignKey("pharma_drugs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    nct_id = Column(String, nullable=False, unique=True)
+    title = Column(String, nullable=True)
+    phase = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    condition = Column(String, nullable=True)
+    estimated_completion = Column(Date, nullable=True)
+    enrollment = Column(Integer, nullable=True)
+    success_probability = Column(Numeric(5, 2), nullable=True)
+    sponsor = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
+    last_refreshed = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    drug = relationship("PharmaDrug", back_populates="trials")
+
+    __table_args__ = (
+        Index("ix_pharma_trial_phase_status", "phase", "status"),
+    )

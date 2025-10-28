@@ -44,13 +44,23 @@ class FinancialAnnualOut(BaseModel):
 
     # Income Statement
     revenue: Optional[float] = None
+    cost_of_revenue: Optional[float] = None
     gross_profit: Optional[float] = None
+    research_and_development: Optional[float] = None
+    selling_general_admin: Optional[float] = None
     operating_income: Optional[float] = None
+    interest_expense: Optional[float] = None
+    income_tax_expense: Optional[float] = None
     net_income: Optional[float] = None
     eps_diluted: Optional[float] = None
     # Balance Sheet
     assets_total: Optional[float] = None
+    liabilities_current: Optional[float] = None
+    liabilities_longterm: Optional[float] = None
     equity_total: Optional[float] = None
+    inventories: Optional[float] = None
+    accounts_receivable: Optional[float] = None
+    accounts_payable: Optional[float] = None
     cash_and_sti: Optional[float] = None
     total_debt: Optional[float] = None
     shares_outstanding: Optional[float] = None
@@ -58,6 +68,10 @@ class FinancialAnnualOut(BaseModel):
     cfo: Optional[float] = None
     capex: Optional[float] = None
     fcf: Optional[float] = None  # computed in the router
+    depreciation_amortization: Optional[float] = None
+    share_based_comp: Optional[float] = None
+    dividends_paid: Optional[float] = None
+    share_repurchases: Optional[float] = None
 
 # ---------- financial Quarterly -------
 

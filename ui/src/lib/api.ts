@@ -93,3 +93,96 @@ export async function fetchValuationSummary(tickers: string[]): Promise<
   if (!res.ok) throw new Error(`valuation/summary ${res.status}`);
   return res.json();
 }
+
+// -------- Pharma endpoints --------
+
+export type PharmaCompanyListItem = {
+  ticker: string;
+  company_id: number;
+  name: string;
+  industry?: string | null;
+  lead_sponsor?: string | null;
+  last_refreshed?: string | null;
+  drug_count: number;
+  trial_count: number;
+};
+
+export type PharmaCompanyListResponse = {
+  total: number;
+  items: PharmaCompanyListItem[];
+  limit: number;
+  offset: number;
+};
+
+export async function fetchPharmaCompanies(params: { search?: string; limit?: number; offset?: number }): Promise<PharmaCompanyListResponse> {
+  const q = new URLSearchParams();
+  if (params.search) q.set("search", params.search);
+  if (params.limit != null) q.set("limit", String(params.limit));
+  if (params.offset != null) q.set("offset", String(params.offset));
+
+  const res = await fetch(`${API_BASE}/pharma/companies?${q.toString()}`);
+  if (!res.ok) throw new Error(`pharma/companies ${res.status}`);
+  return res.json();
+}
+
+export type PharmaTrial = {
+  id?: number;
+  nct_id?: string;
+  title?: string | null;
+  phase?: string | null;
+  status?: string | null;
+  condition?: string | null;
+  estimated_completion?: string | null;
+  enrollment?: number | null;
+  success_probability?: number | null;
+  sponsor?: string | null;
+  location?: string | null;
+  source_url?: string | null;
+  last_refreshed?: string | null;
+};
+
+export type PharmaDrug = {
+  id?: number;
+  name: string;
+  indication?: string | null;
+  trials: PharmaTrial[];
+};
+
+export type PharmaCompanyDetail = {
+  company: {
+    id: number;
+    ticker: string;
+    name: string;
+    industry?: string | null;
+    lead_sponsor?: string | null;
+    last_refreshed?: string | null;
+  };
+  drugs: PharmaDrug[];
+  live_drugs?: PharmaDrug[] | null;
+  analysis?: string | null;
+};
+
+export async function fetchPharmaCompany(identifier: string, opts?: { force_live?: boolean }): Promise<PharmaCompanyDetail> {
+  const q = new URLSearchParams();
+  if (opts?.force_live) q.set("force_live", "true");
+  const res = await fetch(`${API_BASE}/pharma/${identifier}?${q.toString()}`);
+  if (!res.ok) throw new Error(`pharma/company ${res.status}`);
+  return res.json();
+}
+
+export async function refreshPharmaCompany(identifier: string): Promise<{ ticker: string; refreshed_trials: number }> {
+  const res = await fetch(`${API_BASE}/pharma/${identifier}/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error(`pharma/refresh ${res.status}`);
+  return res.json();
+}
+
+export async function pharmaChat(message: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/pharma/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) throw new Error(`pharma/chat ${res.status}`);
+  const data = await res.json();
+  return data.response as string;
+}
