@@ -49,3 +49,6 @@ package.json
 # Project-specific junk
 ui/.e
 EOF
+
+#PharmaTracker
+*/PharmaTracker/
