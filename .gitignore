@@ -52,3 +52,11 @@ EOF
 
 #PharmaTracker
 */PharmaTracker/
+PharmaTracker/
+
+#Ignore ops/data directory of clinical trials
+*/ops/data/
+ops/data/
+
+#ignore zip files: 
+AllPublicXML.zip

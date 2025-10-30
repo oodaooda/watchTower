@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -106,7 +106,7 @@ def _lead_candidates(company: Company, override: Optional[str]) -> List[str]:
     return [c for c in candidates if c]
 
 
-def _ensure_pharma_company(session: Session, company: Company, lead_sponsor: Optional[str]) -> PharmaCompany:
+def ensure_pharma_company(session: Session, company: Company, lead_sponsor: Optional[str]) -> PharmaCompany:
     stmt = select(PharmaCompany).where(PharmaCompany.company_id == company.id)
     pharma = session.execute(stmt).scalar_one_or_none()
     if pharma:
@@ -125,7 +125,11 @@ def _ensure_pharma_company(session: Session, company: Company, lead_sponsor: Opt
     return pharma
 
 
-def _ensure_drug(
+def _ensure_pharma_company(session: Session, company: Company, lead_sponsor: Optional[str]) -> PharmaCompany:
+    return ensure_pharma_company(session, company, lead_sponsor)
+
+
+def ensure_drug(
     session: Session,
     pharma_company: PharmaCompany,
     drug_name: str,
@@ -162,7 +166,17 @@ def _ensure_drug(
     return drug
 
 
-def _upsert_trial(session: Session, drug: PharmaDrug, record: dict) -> PharmaTrial:
+def _ensure_drug(
+    session: Session,
+    pharma_company: PharmaCompany,
+    drug_name: str,
+    indication: Optional[str],
+    cache: Optional[Dict[str, PharmaDrug]] = None,
+) -> PharmaDrug:
+    return ensure_drug(session, pharma_company, drug_name, indication, cache)
+
+
+def upsert_trial(session: Session, drug: PharmaDrug, record: dict) -> PharmaTrial:
     nct_id = record.get("nct_id")
     if not nct_id:
         raise ValueError("Missing nct_id in trial record.")
@@ -189,6 +203,10 @@ def _upsert_trial(session: Session, drug: PharmaDrug, record: dict) -> PharmaTri
     trial.last_refreshed = datetime.utcnow()
 
     return trial
+
+
+def _upsert_trial(session: Session, drug: PharmaDrug, record: dict) -> PharmaTrial:
+    return upsert_trial(session, drug, record)
 
 
 def refresh_company(
@@ -222,30 +240,43 @@ def refresh_company(
     if not studies:
         return 0
 
-    grouped = group_by_intervention(studies)
     first_lead = next((record.get("lead_sponsor") for record in studies if record.get("lead_sponsor")), None)
-    pharma_company = _ensure_pharma_company(session, company, first_lead)
+    ensure_pharma_company(session, company, first_lead)
+    return ingest_records(session, company, studies, lead_sponsor_override=first_lead)
 
-    drug_cache: Dict[str, PharmaDrug] = {
-        d.name.lower(): d for d in pharma_company.drugs
-    }
+
+def ingest_records(
+    session: Session,
+    company: Company,
+    records: List[dict],
+    *,
+    lead_sponsor_override: Optional[str] = None,
+) -> int:
+    if not records:
+        return 0
+
+    grouped = group_by_intervention(records)
+    first_lead = lead_sponsor_override or next((record.get("lead_sponsor") for record in records if record.get("lead_sponsor")), None)
+    pharma_company = ensure_pharma_company(session, company, first_lead)
+
+    drug_cache: Dict[str, PharmaDrug] = {d.name.lower(): d for d in pharma_company.drugs}
     processed_ids: set[str] = {trial.nct_id for d in pharma_company.drugs for trial in d.trials if trial.nct_id}
 
     total_trials = 0
-    for drug_name, records in grouped.items():
-        drug = _ensure_drug(
+    for drug_name, recs in grouped.items():
+        drug = ensure_drug(
             session,
             pharma_company,
             drug_name,
-            indication=", ".join(records[0].get("conditions") or []),
+            indication=", ".join(recs[0].get("conditions") or []),
             cache=drug_cache,
         )
-        for record in records:
+        for record in recs:
             nct_id = record.get("nct_id")
             if not nct_id or nct_id in processed_ids:
                 continue
             try:
-                _upsert_trial(session, drug, record)
+                upsert_trial(session, drug, record)
                 total_trials += 1
                 processed_ids.add(nct_id)
             except ValueError:

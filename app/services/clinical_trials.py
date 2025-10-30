@@ -70,7 +70,7 @@ def _extract_lead_sponsor(protocol_section: Dict[str, object]) -> Optional[str]:
     return name.strip() if isinstance(name, str) else None
 
 
-def _estimate_probability(phase: Optional[str], status: Optional[str]) -> Optional[float]:
+def estimate_probability(phase: Optional[str], status: Optional[str]) -> Optional[float]:
     if not phase:
         return None
     probability = PHASE_SUCCESS_PROBABILITIES.get(phase)
@@ -90,6 +90,10 @@ def _estimate_probability(phase: Optional[str], status: Optional[str]) -> Option
         elif "terminated" in status_lower or "suspended" in status_lower or "withdrawn" in status_lower:
             probability = min(probability, 0.15)
     return round(probability * 100, 2)
+
+
+def _estimate_probability(phase: Optional[str], status: Optional[str]) -> Optional[float]:
+    return estimate_probability(phase, status)
 
 
 def normalise_study(study: Dict[str, object]) -> ClinicalTrialRecord:
@@ -216,7 +220,7 @@ def group_by_intervention(
     return grouped
 
 
-def _normalize_intervention_name(raw: Optional[str]) -> Optional[str]:
+def normalize_intervention_name(raw: Optional[str]) -> Optional[str]:
     if not raw:
         return None
     name = raw.strip()
@@ -231,6 +235,10 @@ def _normalize_intervention_name(raw: Optional[str]) -> Optional[str]:
     # Collapse extra spaces
     name = re.sub(r"\s+", " ", name)
     return name or None
+
+
+def _normalize_intervention_name(raw: Optional[str]) -> Optional[str]:
+    return normalize_intervention_name(raw)
 
 
 def _format_phase(value: Optional[str]) -> Optional[str]:
@@ -267,10 +275,14 @@ def _format_phase(value: Optional[str]) -> Optional[str]:
     return s.title()
 
 
+def format_phase(value: Optional[str]) -> Optional[str]:
+    return _format_phase(value)
+
+
 PHASE_REGEX = re.compile(r"phase\s*(I{1,4}|V|1/2|2/3|3/4|1|2|3|4)", re.IGNORECASE)
 
 
-def _infer_phase_from_text(text: str) -> Optional[str]:
+def infer_phase_from_text(text: str) -> Optional[str]:
     if not text:
         return None
     match = PHASE_REGEX.search(text)
@@ -296,3 +308,7 @@ def _infer_phase_from_text(text: str) -> Optional[str]:
     if token.startswith("I"):
         return f"Phase {len(token)}"
     return f"Phase {token}"
+
+
+def _infer_phase_from_text(text: str) -> Optional[str]:
+    return infer_phase_from_text(text)
