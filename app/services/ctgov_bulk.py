@@ -18,6 +18,8 @@ from app.services.clinical_trials import (
     format_phase,
     normalize_intervention_name,
     infer_phase_from_text,
+    is_active_status,
+    status_category,
 )
 from app.services.pharma_refresh import ensure_pharma_company, ingest_records
 
@@ -91,6 +93,12 @@ def parse_study_xml(xml_bytes: bytes) -> Optional[Dict[str, object]]:
         enrollment_count = None
 
     success_prob = estimate_probability(phase, status)
+    verification_date = parse_completion_date(text("verification_date"))
+    start_date = parse_completion_date(text("start_date"))
+    has_results = root.find("clinical_results") is not None
+    why_stopped = text("why_stopped")
+    study_type = (text("study_type") or "").strip()
+    is_interventional = study_type.lower() != "observational"
 
     return {
         "nct_id": nct_id,
@@ -106,6 +114,14 @@ def parse_study_xml(xml_bytes: bytes) -> Optional[Dict[str, object]]:
         "lead_sponsor": lead_sponsor,
         "location": text("location/facility/name"),
         "source_url": f"https://clinicaltrials.gov/study/{nct_id}",
+        "has_results": has_results,
+        "why_stopped": why_stopped,
+        "status_last_verified": verification_date,
+        "start_date": start_date,
+        "study_type": study_type,
+        "is_interventional": is_interventional,
+        "status_category": status_category(status),
+        "is_active": is_active_status(status),
     }
 
 

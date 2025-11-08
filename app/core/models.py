@@ -310,6 +310,7 @@ class PharmaTrial(Base):
     status = Column(String, nullable=True)
     condition = Column(String, nullable=True)
     estimated_completion = Column(Date, nullable=True)
+    start_date = Column(Date, nullable=True)
     enrollment = Column(Integer, nullable=True)
     success_probability = Column(Numeric(5, 2), nullable=True)
     sponsor = Column(String, nullable=True)
@@ -317,9 +318,56 @@ class PharmaTrial(Base):
     source_url = Column(String, nullable=True)
     last_refreshed = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+    has_results = Column(Boolean, nullable=True)
+    why_stopped = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    status_last_verified = Column(Date, nullable=True)
 
     drug = relationship("PharmaDrug", back_populates="trials")
 
     __table_args__ = (
         Index("ix_pharma_trial_phase_status", "phase", "status"),
     )
+
+
+class PharmaDrugMetadata(Base):
+    __tablename__ = "pharma_drug_metadata"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String, nullable=False, index=True)
+    drug_name = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    label = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    phase_override = Column(String, nullable=True)
+    is_commercial = Column(Boolean, nullable=False, default=False)
+    peak_sales = Column(Numeric(14, 2), nullable=True)
+    peak_sales_currency = Column(String(3), nullable=True)
+    peak_sales_year = Column(Integer, nullable=True)
+    probability_override = Column(Numeric(5, 2), nullable=True)
+    segment = Column(String, nullable=True)
+
+    sales = relationship(
+        "PharmaDrugSales",
+        back_populates="metadata_entry",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "drug_name", name="uq_pharma_drug_metadata_ticker_name"),
+    )
+
+
+class PharmaDrugSales(Base):
+    __tablename__ = "pharma_drug_sales"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    metadata_id = Column(Integer, ForeignKey("pharma_drug_metadata.id", ondelete="CASCADE"), nullable=False, index=True)
+    period_type = Column(String(16), nullable=False)
+    period_year = Column(Integer, nullable=False)
+    period_quarter = Column(Integer, nullable=True)
+    revenue = Column(Numeric(16, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    source = Column(String, nullable=True)
+
+    metadata_entry = relationship("PharmaDrugMetadata", back_populates="sales")

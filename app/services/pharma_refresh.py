@@ -13,7 +13,11 @@ from app.core.models import (
     PharmaDrug,
     PharmaTrial,
 )
-from app.services.clinical_trials import fetch_studies, group_by_intervention
+from app.services.clinical_trials import (
+    fetch_studies,
+    group_by_intervention,
+    is_active_status,
+)
 
 PHARMA_KEYWORDS = ("pharma", "pharmaceutical", "biotech", "drug")
 ORG_SUFFIXES = (
@@ -195,11 +199,25 @@ def upsert_trial(session: Session, drug: PharmaDrug, record: dict) -> PharmaTria
     trial.condition = ", ".join(record.get("conditions") or [])
     completion = record.get("estimated_completion")
     trial.estimated_completion = completion.date() if hasattr(completion, "date") else completion
+    start_date = record.get("start_date")
+    if hasattr(start_date, "date"):
+        start_date = start_date.date()
+    trial.start_date = start_date
     trial.enrollment = record.get("enrollment")
     trial.success_probability = record.get("success_probability")
     trial.sponsor = record.get("lead_sponsor")
     trial.location = record.get("location")
     trial.source_url = record.get("source_url")
+    trial.has_results = record.get("has_results")
+    trial.why_stopped = record.get("why_stopped")
+    is_active = record.get("is_active")
+    if is_active is None:
+        is_active = is_active_status(record.get("status"))
+    trial.is_active = bool(is_active)
+    status_verified = record.get("status_last_verified")
+    if hasattr(status_verified, "date"):
+        status_verified = status_verified.date()
+    trial.status_last_verified = status_verified
     trial.last_refreshed = datetime.utcnow()
 
     return trial
@@ -275,6 +293,10 @@ def ingest_records(
             nct_id = record.get("nct_id")
             if not nct_id or nct_id in processed_ids:
                 continue
+            if record.get("is_interventional") is False:
+                continue
+            if record.get("is_active") is None:
+                record["is_active"] = is_active_status(record.get("status"))
             try:
                 upsert_trial(session, drug, record)
                 total_trials += 1

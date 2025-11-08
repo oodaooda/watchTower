@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List
@@ -32,11 +33,48 @@ def load_mapping(path: Path) -> Dict[str, Dict[str, List[str]]]:
     return mapping
 
 
-def collect_records(ticker: str, aliases: Dict[str, List[str]]) -> List[dict]:
+def _normalize(text: str) -> str:
+    return re.sub(r"\W+", "", text).upper()
+
+
+def _build_expected_sponsors(company: Company, aliases: Dict[str, List[str]]) -> List[str]:
+    expected: List[str] = []
+    if company.name:
+        expected.append(company.name)
+    for item in aliases.get("sponsors", []):
+        if item:
+            expected.append(item)
+    return expected
+
+
+def _matches_expected_sponsor(record: dict, expected: List[str]) -> bool:
+    if not expected:
+        return True
+    sponsor = record.get("lead_sponsor") or ""
+    if not sponsor:
+        return True
+    normalized = _normalize(sponsor)
+    for candidate in expected:
+        cand_norm = _normalize(candidate)
+        if not cand_norm:
+            continue
+        if normalized == cand_norm:
+            return True
+        if cand_norm in normalized or normalized in cand_norm:
+            return True
+    return False
+
+
+def collect_records(company: Company, aliases: Dict[str, List[str]]) -> List[dict]:
     seen: OrderedDict[str, dict] = OrderedDict()
+    expected_sponsors = _build_expected_sponsors(company, aliases)
 
     def add_records(studies: List[dict]):
         for record in studies:
+            if record.get("is_interventional") is False:
+                continue
+            if not _matches_expected_sponsor(record, expected_sponsors):
+                continue
             nct_id = record.get("nct_id")
             if not nct_id:
                 continue
@@ -60,7 +98,7 @@ def collect_records(ticker: str, aliases: Dict[str, List[str]]) -> List[dict]:
 
 def seed_company(session: Session, company: Company, aliases: Dict[str, List[str]]) -> int:
     ensure_pharma_company(session, company, None)
-    records = collect_records(company.ticker, aliases)
+    records = collect_records(company, aliases)
     if not records:
         return 0
     return ingest_records(session, company, records)

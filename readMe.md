@@ -28,6 +28,10 @@ python -m ops.run_backfill --limit 50docker exec -it wt-pg psql -U postgres -d w
 # Backfill fundimentals 
 PYTHONPATH=. python -m ops.run_backfill 
 
+# Backfill quaterly
+python -m ops.run_backfill_quarterly --ticker DUOL
+
+
 # Recompute Metrics
 python -m ops.recompute_metrics 
 

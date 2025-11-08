@@ -26,6 +26,65 @@ class ClinicalTrialRecord(Dict[str, object]):
     """Typed dict wrapper for clarity."""
 
 
+ACTIVE_STATUSES = {
+    "RECRUITING",
+    "ACTIVE, NOT RECRUITING",
+    "ENROLLING BY INVITATION",
+    "NOT YET RECRUITING",
+    "AVAILABLE",
+}
+
+COMMERCIAL_STATUSES = {
+    "APPROVED FOR MARKETING",
+}
+
+NEGATIVE_STATUSES = {
+    "TERMINATED",
+    "WITHDRAWN",
+    "SUSPENDED",
+}
+
+HISTORICAL_STATUSES = {
+    "COMPLETED",
+    "UNKNOWN STATUS",
+    "NO LONGER AVAILABLE",
+}
+
+
+def is_active_status(status: Optional[str]) -> bool:
+    if not status:
+        return False
+    value = status.strip().upper()
+    if value in COMMERCIAL_STATUSES:
+        return False
+    if value in NEGATIVE_STATUSES:
+        return False
+    return value in ACTIVE_STATUSES
+
+
+def is_commercial_status(status: Optional[str]) -> bool:
+    if not status:
+        return False
+    return status.strip().upper() in COMMERCIAL_STATUSES
+
+
+def status_category(status: Optional[str]) -> str:
+    if is_commercial_status(status):
+        return "commercial"
+    if is_active_status(status):
+        return "active"
+    if not status:
+        return "unknown"
+    value = status.strip().upper()
+    if value in NEGATIVE_STATUSES:
+        return "terminated"
+    if value in HISTORICAL_STATUSES:
+        return "historical"
+    if "COMPLETED" in value:
+        return "historical"
+    return "other"
+
+
 def _parse_date(date_struct: Optional[Dict[str, str]]) -> Optional[datetime]:
     if not date_struct:
         return None
@@ -71,24 +130,47 @@ def _extract_lead_sponsor(protocol_section: Dict[str, object]) -> Optional[str]:
 
 
 def estimate_probability(phase: Optional[str], status: Optional[str]) -> Optional[float]:
-    if not phase:
-        return None
-    probability = PHASE_SUCCESS_PROBABILITIES.get(phase)
+    category = status_category(status)
+    if category == "commercial":
+        return 95.0
+
+    probability: Optional[float] = None
+    if phase:
+        probability = PHASE_SUCCESS_PROBABILITIES.get(phase)
+        if probability is None:
+            # Attempt to match partial phase names
+            for key, value in PHASE_SUCCESS_PROBABILITIES.items():
+                if key.lower() in phase.lower():
+                    probability = value
+                    break
+
     if probability is None:
-        # Attempt to match partial phase names
-        for key, value in PHASE_SUCCESS_PROBABILITIES.items():
-            if key.lower() in phase.lower():
-                probability = value
-                break
-    if probability is None:
-        return None
-    # Basic status adjustment
-    if status:
-        status_lower = status.lower()
-        if "completed" in status_lower:
-            probability = min(probability + 0.1, 0.95)
-        elif "terminated" in status_lower or "suspended" in status_lower or "withdrawn" in status_lower:
-            probability = min(probability, 0.15)
+        # If we have a meaningful status but no phase, fall back to conservative defaults
+        if category == "active":
+            probability = 0.3
+        elif category == "historical":
+            probability = 0.2
+        elif category == "terminated":
+            probability = 0.05
+        else:
+            return None
+
+    status_lower = status.lower() if status else ""
+    if category == "active":
+        if "not yet recruiting" in status_lower:
+            probability *= 0.85
+        elif "recruiting" in status_lower or "enrolling" in status_lower:
+            probability *= 1.05
+        elif "active, not recruiting" in status_lower:
+            probability *= 1.02
+    elif category == "historical":
+        probability = min(probability, 0.35)
+    elif category == "terminated":
+        probability = min(probability, 0.1)
+    elif category in {"other", "unknown"}:
+        probability = min(probability, 0.25)
+
+    probability = max(0.01, min(probability, 0.99))
     return round(probability * 100, 2)
 
 
@@ -101,7 +183,6 @@ def normalise_study(study: Dict[str, object]) -> ClinicalTrialRecord:
     identification = protocol.get("identificationModule") or {}
     status_module = protocol.get("statusModule") or {}
     design_module = protocol.get("designModule") or {}
-
     nct_id = identification.get("nctId")
     title = identification.get("briefTitle")
 
@@ -112,6 +193,9 @@ def normalise_study(study: Dict[str, object]) -> ClinicalTrialRecord:
     primary_completion = _parse_date(status_module.get("primaryCompletionDateStruct"))
     completion_date = _parse_date(status_module.get("completionDateStruct"))
     estimated_completion = primary_completion or completion_date
+    status_verified = _parse_date(status_module.get("statusVerifiedDateStruct"))
+    last_update_posted = _parse_date(status_module.get("lastUpdatePostDateStruct"))
+    start_date = _parse_date(status_module.get("startDateStruct"))
 
     enrollment_info = design_module.get("enrollmentInfo") or {}
     enrollment = enrollment_info.get("count")
@@ -127,6 +211,10 @@ def normalise_study(study: Dict[str, object]) -> ClinicalTrialRecord:
     location_module = protocol.get("contactsLocationsModule") or {}
     locations = location_module.get("locations") or []
     first_location = locations[0]["facility"]["name"] if locations else None
+    why_stopped = status_module.get("whyStopped")
+    has_results = bool(study.get("resultsSection"))
+    study_type = (design_module.get("studyType") or "").strip()
+    is_interventional = (study_type or "").lower() != "observational"
 
     record: ClinicalTrialRecord = {
         "nct_id": nct_id,
@@ -143,7 +231,16 @@ def normalise_study(study: Dict[str, object]) -> ClinicalTrialRecord:
         "lead_sponsor": lead_sponsor,
         "location": first_location,
         "source_url": f"https://clinicaltrials.gov/study/{nct_id}" if nct_id else None,
+        "has_results": has_results,
+        "why_stopped": why_stopped,
+        "status_last_verified": status_verified or last_update_posted,
+        "status_last_updated": last_update_posted,
+        "study_type": study_type,
+        "is_interventional": is_interventional,
+        "status_category": status_category(status),
+        "start_date": start_date,
     }
+    record["is_active"] = record["status_category"] == "active"
 
     if not record["phase"]:
         inferred_phase = _infer_phase_from_text(record.get("brief_title") or "") or _infer_phase_from_text(
@@ -217,6 +314,8 @@ def group_by_intervention(
             interventions = ["Unknown Intervention"]
         for intervention in interventions:
             grouped.setdefault(intervention, []).append(record)
+    for key, items in grouped.items():
+        items.sort(key=_record_sort_key)
     return grouped
 
 
@@ -281,6 +380,15 @@ def format_phase(value: Optional[str]) -> Optional[str]:
 
 PHASE_REGEX = re.compile(r"phase\s*(I{1,4}|V|1/2|2/3|3/4|1|2|3|4)", re.IGNORECASE)
 
+STATUS_CATEGORY_ORDER = {
+    "active": 0,
+    "commercial": 1,
+    "historical": 2,
+    "terminated": 3,
+    "other": 4,
+    "unknown": 5,
+}
+
 
 def infer_phase_from_text(text: str) -> Optional[str]:
     if not text:
@@ -312,3 +420,16 @@ def infer_phase_from_text(text: str) -> Optional[str]:
 
 def _infer_phase_from_text(text: str) -> Optional[str]:
     return infer_phase_from_text(text)
+
+
+def _record_sort_key(record: ClinicalTrialRecord) -> Tuple[int, float, float]:
+    category = str(record.get("status_category") or "unknown").lower()
+    rank = STATUS_CATEGORY_ORDER.get(category, 99)
+    verified = record.get("status_last_verified")
+    if isinstance(verified, datetime):
+        verified_value = -verified.timestamp()
+    else:
+        verified_value = float("inf")
+    probability = record.get("success_probability")
+    probability_value = -(float(probability) if isinstance(probability, (int, float)) else 0.0)
+    return (rank, verified_value, probability_value)

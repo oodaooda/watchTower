@@ -79,11 +79,18 @@ class FinancialQuarterlyOut(BaseModel):
     fiscal_year: int
     fiscal_period: str
     revenue: Optional[float]
+    cost_of_revenue: Optional[float] = None
     gross_profit: Optional[float]
+    research_and_development: Optional[float] = None
+    selling_general_admin: Optional[float] = None
     operating_income: Optional[float]
+    interest_expense: Optional[float] = None
+    income_tax_expense: Optional[float] = None
     net_income: Optional[float]
     eps_diluted: Optional[float] = None
     assets_total: Optional[float]
+    liabilities_current: Optional[float] = None
+    liabilities_longterm: Optional[float] = None
     equity_total: Optional[float]
     cash_and_sti: Optional[float]
     total_debt: Optional[float]
@@ -95,14 +102,11 @@ class FinancialQuarterlyOut(BaseModel):
     share_based_comp: Optional[float]
     dividends_paid: Optional[float]
     share_repurchases: Optional[float]
-    liabilities_current: Optional[float]
-    liabilities_longterm: Optional[float]
     inventories: Optional[float]
     accounts_receivable: Optional[float]
     accounts_payable: Optional[float]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---------- Metrics ----------

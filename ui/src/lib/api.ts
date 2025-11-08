@@ -131,21 +131,62 @@ export type PharmaTrial = {
   title?: string | null;
   phase?: string | null;
   status?: string | null;
+  category?: string | null;
+  is_active?: boolean;
   condition?: string | null;
   estimated_completion?: string | null;
+  start_date?: string | null;
   enrollment?: number | null;
   success_probability?: number | null;
   sponsor?: string | null;
   location?: string | null;
   source_url?: string | null;
   last_refreshed?: string | null;
+  has_results?: boolean | null;
+  why_stopped?: string | null;
+  outcome?: string | null;
+  status_last_verified?: string | null;
+  data_source?: string | null;
 };
 
 export type PharmaDrug = {
   id?: number;
   name: string;
+  display_name?: string | null;
+  label?: string | null;
   indication?: string | null;
-  trials: PharmaTrial[];
+  summary: {
+    stage?: string | null;
+    status?: string | null;
+    probability?: number | null;
+    probability_source?: string | null;
+    peak_sales?: number | null;
+    peak_sales_currency?: string | null;
+    peak_sales_year?: number | null;
+    expected_value?: number | null;
+    expected_value_currency?: string | null;
+    is_commercial?: boolean;
+    label?: string | null;
+    active_trial_count: number;
+    total_trial_count: number;
+    primary_nct_id?: string | null;
+    primary_estimated_completion?: string | null;
+    primary_success_probability?: number | null;
+    primary_start_date?: string | null;
+    notes?: string | null;
+    metadata_source?: string | null;
+    segment?: string | null;
+    sales?: {
+      annual: Array<{ year: number; revenue: number | null; currency?: string | null; source?: string | null }>;
+      quarterly: Array<{ year: number; quarter?: number | null; revenue: number | null; currency?: string | null; source?: string | null }>;
+    };
+  };
+  sales?: {
+    annual: Array<{ year: number; revenue: number | null; currency?: string | null; source?: string | null }>;
+    quarterly: Array<{ year: number; quarter?: number | null; revenue: number | null; currency?: string | null; source?: string | null }>;
+  };
+  active_trials: PharmaTrial[];
+  historical_trials: PharmaTrial[];
 };
 
 export type PharmaCompanyDetail = {
@@ -158,7 +199,20 @@ export type PharmaCompanyDetail = {
     last_refreshed?: string | null;
   };
   drugs: PharmaDrug[];
+  legacy_drugs?: PharmaDrug[];
   live_drugs?: PharmaDrug[] | null;
+  summary: {
+    total_drugs: number;
+    total_trials: number;
+    active_trials: number;
+    active_drug_count: number;
+    commercial_assets: number;
+    expected_value_by_currency: Record<string, number>;
+    peak_sales_by_currency: Record<string, number>;
+    latest_annual_sales_by_currency: Record<string, number>;
+    legacy_drug_count?: number;
+    legacy_trial_count?: number;
+  };
   analysis?: string | null;
 };
 
