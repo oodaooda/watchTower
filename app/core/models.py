@@ -69,8 +69,11 @@ class FinancialAnnual(Base):
     gross_profit = Column(Numeric(20, 4))
     research_and_development = Column(Numeric(20, 4))
     selling_general_admin = Column(Numeric(20, 4))
+    sales_and_marketing = Column(Numeric(20, 4))
+    general_and_administrative = Column(Numeric(20, 4))
     operating_income = Column(Numeric(20, 4))
     interest_expense = Column(Numeric(20, 4))
+    other_income_expense = Column(Numeric(20, 4))
     income_tax_expense = Column(Numeric(20, 4))
     net_income = Column(Numeric(20, 4))
 
@@ -123,8 +126,11 @@ class FinancialQuarterly(Base):
     gross_profit = Column(Numeric(20, 4))
     research_and_development = Column(Numeric(20, 4))
     selling_general_admin = Column(Numeric(20, 4))
+    sales_and_marketing = Column(Numeric(20, 4))
+    general_and_administrative = Column(Numeric(20, 4))
     operating_income = Column(Numeric(20, 4))
     interest_expense = Column(Numeric(20, 4))
+    other_income_expense = Column(Numeric(20, 4))
     income_tax_expense = Column(Numeric(20, 4))
     net_income = Column(Numeric(20, 4))
 

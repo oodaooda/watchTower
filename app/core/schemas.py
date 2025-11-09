@@ -48,8 +48,11 @@ class FinancialAnnualOut(BaseModel):
     gross_profit: Optional[float] = None
     research_and_development: Optional[float] = None
     selling_general_admin: Optional[float] = None
+    sales_and_marketing: Optional[float] = None
+    general_and_administrative: Optional[float] = None
     operating_income: Optional[float] = None
     interest_expense: Optional[float] = None
+    other_income_expense: Optional[float] = None
     income_tax_expense: Optional[float] = None
     net_income: Optional[float] = None
     eps_diluted: Optional[float] = None
@@ -83,8 +86,11 @@ class FinancialQuarterlyOut(BaseModel):
     gross_profit: Optional[float]
     research_and_development: Optional[float] = None
     selling_general_admin: Optional[float] = None
+    sales_and_marketing: Optional[float] = None
+    general_and_administrative: Optional[float] = None
     operating_income: Optional[float]
     interest_expense: Optional[float] = None
+    other_income_expense: Optional[float] = None
     income_tax_expense: Optional[float] = None
     net_income: Optional[float]
     eps_diluted: Optional[float] = None

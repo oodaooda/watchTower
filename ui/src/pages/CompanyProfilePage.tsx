@@ -553,113 +553,113 @@ export default function CompanyProfilePage() {
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <MetricCard
-              title="Balance Sheet"
-              metrics={[
-                { key: "cash_and_sti", label: "Cash & STI", format: "currency" },
-                { key: "total_debt", label: "Total Debt", format: "currency" },
-                { key: "assets_total", label: "Total Assets", format: "currency" },
-                { key: "equity_total", label: "Total Equity", format: "currency" },
-                { key: "liabilities_current", label: "Current Liabilities", format: "currency" },
-                { key: "liabilities_longterm", label: "Long-term Liabilities", format: "currency" },
-                { key: "inventories", label: "Inventories", format: "currency" },
-                { key: "accounts_receivable", label: "Accounts Receivable", format: "currency" },
-                { key: "accounts_payable", label: "Accounts Payable", format: "currency" },
-              ]}
-              data={profile.balance_sheet}
-              dense
-            />
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ChartCard
-                title="Revenue & Net Income"
-                hasData={revenueIncomeData.length > 0}
-                compact
-              >
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={revenueIncomeData}>
-                    <defs>
-                      <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="ni" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(v) => formatCompactCurrency(v as number)} tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value, key) =>
-                        formatCompactCurrency(typeof value === "number" ? value : Number(value))
-                      }
-                      labelFormatter={(label) => `FY ${label}`}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="revenue"
-                      name="Revenue"
-                      stroke="#2563eb"
-                      fill="url(#rev)"
-                      strokeWidth={2}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="netIncome"
-                      name="Net Income"
-                      stroke="#22c55e"
-                      fill="url(#ni)"
-                      strokeWidth={2}
-                    />
-                    <Legend verticalAlign="top" height={24} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              <ChartCard title="Cash vs Debt" hasData={cashDebtData.length > 0} compact>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={cashDebtData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(v) => formatCompactCurrency(v as number)} tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value, key) =>
-                        formatCompactCurrency(typeof value === "number" ? value : Number(value))
-                      }
-                      labelFormatter={(label) => `FY ${label}`}
-                    />
-                    <Legend verticalAlign="top" height={24} />
-                    <Bar dataKey="cash" name="Cash" fill="#22c55e" />
-                    <Bar dataKey="debt" name="Debt" fill="#ef4444" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              <ChartCard title="Shares Outstanding" hasData={sharesData.length > 0} compact>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={sharesData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(v) => numberFmt.format(v as number)} tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value) => numberFmt.format(typeof value === "number" ? value : Number(value))}
-                      labelFormatter={(label) => `FY ${label}`}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="shares"
-                      name="Shares"
-                      stroke="#7c3aed"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartCard>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-3">
+              <MetricCard
+                title="Balance Sheet"
+                metrics={[
+                  { key: "cash_and_sti", label: "Cash & STI", format: "currency" },
+                  { key: "total_debt", label: "Total Debt", format: "currency" },
+                  { key: "assets_total", label: "Total Assets", format: "currency" },
+                  { key: "equity_total", label: "Total Equity", format: "currency" },
+                  { key: "liabilities_current", label: "Current Liabilities", format: "currency" },
+                  { key: "liabilities_longterm", label: "Long-term Liabilities", format: "currency" },
+                  { key: "inventories", label: "Inventories", format: "currency" },
+                  { key: "accounts_receivable", label: "Accounts Receivable", format: "currency" },
+                  { key: "accounts_payable", label: "Accounts Payable", format: "currency" },
+                ]}
+                data={profile.balance_sheet}
+                dense
+              />
             </div>
+
+            <ChartCard
+              title="Revenue & Net Income"
+              hasData={revenueIncomeData.length > 0}
+              compact
+            >
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={revenueIncomeData}>
+                  <defs>
+                    <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="ni" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(v) => formatCompactCurrency(v as number)} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value, key) =>
+                      formatCompactCurrency(typeof value === "number" ? value : Number(value))
+                    }
+                    labelFormatter={(label) => `FY ${label}`}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    name="Revenue"
+                    stroke="#2563eb"
+                    fill="url(#rev)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="netIncome"
+                    name="Net Income"
+                    stroke="#22c55e"
+                    fill="url(#ni)"
+                    strokeWidth={2}
+                  />
+                  <Legend verticalAlign="top" height={24} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            <ChartCard title="Cash vs Debt" hasData={cashDebtData.length > 0} compact>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={cashDebtData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(v) => formatCompactCurrency(v as number)} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value, key) =>
+                      formatCompactCurrency(typeof value === "number" ? value : Number(value))
+                    }
+                    labelFormatter={(label) => `FY ${label}`}
+                  />
+                  <Legend verticalAlign="top" height={24} />
+                  <Bar dataKey="cash" name="Cash" fill="#22c55e" />
+                  <Bar dataKey="debt" name="Debt" fill="#ef4444" />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            <ChartCard title="Shares Outstanding" hasData={sharesData.length > 0} compact>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={sharesData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(v) => numberFmt.format(v as number)} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value) => numberFmt.format(typeof value === "number" ? value : Number(value))}
+                    labelFormatter={(label) => `FY ${label}`}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="shares"
+                    name="Shares"
+                    stroke="#7c3aed"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
           </div>
         </>
       ) : (

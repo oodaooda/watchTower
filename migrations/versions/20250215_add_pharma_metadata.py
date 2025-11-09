@@ -1,7 +1,7 @@
 """add pharma drug metadata
 
 Revision ID: add_pharma_metadata
-Revises: add_pharma_tables
+Revises: 20241103_add_financial_gna_other
 Create Date: 2025-02-15 18:00:00
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "add_pharma_metadata"
-down_revision = "add_pharma_tables"
+down_revision = "20241103_add_financial_gna_other"
 branch_labels = None
 depends_on = None
 

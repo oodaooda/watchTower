@@ -9,8 +9,11 @@ type Row = {
   gross_profit?: number | null;
   research_and_development?: number | null;
   selling_general_admin?: number | null;
+  sales_and_marketing?: number | null;
+  general_and_administrative?: number | null;
   operating_income?: number | null;
   interest_expense?: number | null;
+  other_income_expense?: number | null;
   income_tax_expense?: number | null;
   net_income?: number | null;
   eps_diluted?: number | null;
@@ -148,7 +151,8 @@ export default function FinancialsPage() {
   }, [companyId, mode]);
 
   const displayRows = useMemo(() => {
-    if (mode !== "annual" || rows.length === 0) return rows;
+    if (rows.length === 0) return rows;
+    const isAnnual = mode === "annual";
 
     const safeSum = (...vals: Array<number | null | undefined>) => {
       let total = 0;
@@ -177,25 +181,43 @@ export default function FinancialsPage() {
         subtract(revenue, cogs) ?? row.gross_profit ?? null;
 
       const netIncome = row.net_income ?? null;
+      const rawSalesMarketing = row.sales_and_marketing ?? null;
+      const rawGeneralAdmin = row.general_and_administrative ?? null;
+      const hasBreakout =
+        rawSalesMarketing !== null || rawGeneralAdmin !== null;
+      const salesMarketingDisplay =
+        rawSalesMarketing ??
+        (!hasBreakout ? row.selling_general_admin ?? null : null);
+      const generalAdminDisplay = rawGeneralAdmin ?? null;
 
       const operatingExpense = safeSum(
         row.research_and_development,
-        row.selling_general_admin
+        salesMarketingDisplay,
+        generalAdminDisplay
       );
 
-      const operatingIncome =
-        subtract(revenue, operatingExpense ?? null) ??
-        subtract(grossMargin, operatingExpense ?? null) ??
-        row.operating_income ??
-        null;
+      const operatingIncomeDerived =
+        grossMargin !== null && operatingExpense !== null
+          ? grossMargin - operatingExpense
+          : null;
+      const operatingIncome = operatingIncomeDerived ?? row.operating_income ?? null;
 
-      const pretax =
-        row.interest_expense !== null && row.interest_expense !== undefined
-          ? subtract(operatingIncome ?? null, row.interest_expense ?? null)
-          : operatingIncome ?? null;
+      const otherIncome = row.other_income_expense ?? null;
+      let pretax: number | null = null;
+      if (operatingIncome !== null || otherIncome !== null) {
+        pretax = (operatingIncome ?? 0) + (otherIncome ?? 0);
+      } else if (
+        row.interest_expense !== null &&
+        row.interest_expense !== undefined
+      ) {
+        pretax = subtract(operatingIncome ?? null, row.interest_expense ?? null);
+      } else {
+        pretax = operatingIncome ?? null;
+      }
 
       const prevRevenue = idx > 0 ? rows[idx - 1]?.revenue ?? null : null;
       const revenueYoY =
+        isAnnual &&
         revenue !== null &&
         prevRevenue !== null &&
         prevRevenue !== 0
@@ -204,11 +226,18 @@ export default function FinancialsPage() {
 
       const prevRow = idx > 0 ? rows[idx - 1] : undefined;
       const prevGrossMargin =
-        prevRow && prevRow.revenue !== null && prevRow.revenue !== undefined &&
-        prevRow.cost_of_revenue !== null && prevRow.cost_of_revenue !== undefined
+        isAnnual &&
+        prevRow &&
+        prevRow.revenue !== null &&
+        prevRow.revenue !== undefined &&
+        prevRow.cost_of_revenue !== null &&
+        prevRow.cost_of_revenue !== undefined
           ? (prevRow.revenue ?? 0) - (prevRow.cost_of_revenue ?? 0)
-          : prevRow?.gross_profit ?? null;
+          : isAnnual
+          ? prevRow?.gross_profit ?? null
+          : null;
       const grossMarginYoY =
+        isAnnual &&
         grossMargin !== null &&
         prevGrossMargin !== null &&
         prevGrossMargin !== 0
@@ -218,6 +247,7 @@ export default function FinancialsPage() {
       const prevNetIncome =
         idx > 0 ? rows[idx - 1]?.net_income ?? null : null;
       const netIncomeYoY =
+        isAnnual &&
         netIncome !== null &&
         prevNetIncome !== null &&
         prevNetIncome !== 0
@@ -240,6 +270,9 @@ export default function FinancialsPage() {
 
       return {
         ...row,
+        sales_and_marketing: salesMarketingDisplay,
+        general_and_administrative: generalAdminDisplay,
+        other_income_expense: otherIncome,
         gross_margin_calc: grossMargin,
         operating_expense_calc: operatingExpense,
         operating_income_calc: operatingIncome,
@@ -268,7 +301,8 @@ export default function FinancialsPage() {
           derived: true,
         },
         { key: "research_and_development", label: "R&D Expense" },
-        { key: "selling_general_admin", label: "SG&A Expense" },
+        { key: "sales_and_marketing", label: "Sales & Marketing" },
+        { key: "general_and_administrative", label: "General & Administrative" },
         {
           key: "operating_expense_calc",
           label: "Operating Expenses",
@@ -281,6 +315,7 @@ export default function FinancialsPage() {
           strong: true,
           derived: true,
         },
+        { key: "other_income_expense", label: "Other Income (Expense)" },
         { key: "interest_expense", label: "Interest Expense" },
         {
           key: "pretax_income_calc",
@@ -340,9 +375,11 @@ export default function FinancialsPage() {
       { key: "cost_of_revenue", label: "Cost of Revenue" },
       { key: "gross_profit", label: "Gross Profit" },
       { key: "research_and_development", label: "R&D Expense" },
-      { key: "selling_general_admin", label: "SG&A Expense" },
+      { key: "sales_and_marketing", label: "Sales & Marketing" },
+      { key: "general_and_administrative", label: "General & Administrative" },
       { key: "operating_income", label: "Operating Income" },
       { key: "net_income", label: "Net Income" },
+      { key: "other_income_expense", label: "Other Income (Expense)" },
       { key: "interest_expense", label: "Interest Expense" },
       { key: "income_tax_expense", label: "Tax Expense" },
       {

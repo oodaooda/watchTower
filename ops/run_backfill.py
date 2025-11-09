@@ -105,8 +105,22 @@ SGA_TAGS = [
     "SellingAndMarketingExpense",
     "GeneralAndAdministrativeExpense",
 ]
+SALES_MARKETING_TAGS = [
+    "SellingAndMarketingExpense",
+    "SalesAndMarketingExpense",
+]
+GNA_TAGS = [
+    "GeneralAndAdministrativeExpense",
+    "GeneralAndAdministrativeExpenseOperating",
+]
 OPERATING_INCOME_TAGS = ["OperatingIncomeLoss"]
 INT_EXP_TAGS = ["InterestExpense", "InterestExpenseDebt"]
+OTHER_INCOME_TAGS = [
+    "OtherNonoperatingIncomeExpense",
+    "NonoperatingIncomeExpense",
+    "OtherIncomeExpense",
+    "OtherNonoperatingIncomeExpenseNet",
+]
 TAX_EXP_TAGS = ["IncomeTaxExpenseBenefit", "IncomeTaxExpenseBenefitContinuingOperations"]
 
 # 🔹 Cash Flow Extras
@@ -218,7 +232,12 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     cogs_label, cogs_map = merge_by_preference(build_tag_maps(cf, COGS_TAGS), COGS_TAGS)
     rnd_label, rnd_map = merge_by_preference(build_tag_maps(cf, RND_TAGS), RND_TAGS)
     sga_label, sga_map = merge_by_preference(build_tag_maps(cf, SGA_TAGS), SGA_TAGS)
+    sales_marketing_label, sales_marketing_map = merge_by_preference(
+        build_tag_maps(cf, SALES_MARKETING_TAGS), SALES_MARKETING_TAGS
+    )
+    gna_label, gna_map = merge_by_preference(build_tag_maps(cf, GNA_TAGS), GNA_TAGS)
     int_label, int_map = merge_by_preference(build_tag_maps(cf, INT_EXP_TAGS), INT_EXP_TAGS)
+    other_label, other_map = merge_by_preference(build_tag_maps(cf, OTHER_INCOME_TAGS), OTHER_INCOME_TAGS)
     tax_label, tax_map = merge_by_preference(build_tag_maps(cf, TAX_EXP_TAGS), TAX_EXP_TAGS)
 
     # 4) Balance sheet
@@ -268,7 +287,10 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
             f"cogs=[{cogs_label}] {len(cogs_map)}y, "
             f"rnd=[{rnd_label}] {len(rnd_map)}y, "
             f"sga=[{sga_label}] {len(sga_map)}y, "
+            f"s&m=[{sales_marketing_label}] {len(sales_marketing_map)}y, "
+            f"g&a=[{gna_label}] {len(gna_map)}y, "
             f"int=[{int_label}] {len(int_map)}y, "
+            f"other=[{other_label}] {len(other_map)}y, "
             f"tax=[{tax_label}] {len(tax_map)}y, "
             f"assets=[{assets_label}] {len(assets_map)}y, "
             f"equity=[{equity_label}] {len(equity_map)}y, "
@@ -289,7 +311,8 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     # 9) Union of all years
     years = sorted(
         set(rev_map) | set(ni_map) | set(cogs_map) | set(rnd_map) | set(sga_map) |
-        set(int_map) | set(tax_map) | set(gp_map) | set(op_map) |
+        set(sales_marketing_map) | set(gna_map) | set(int_map) | set(other_map) |
+        set(tax_map) | set(gp_map) | set(op_map) |
         set(assets_map) | set(equity_map) | set(liab_cur_map) | set(liab_lt_map) |
         set(inv_map) | set(ar_map) | set(ap_map) |
         set(cash_sti_map) | set(debt_map) |
@@ -314,8 +337,11 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
             "gross_profit": gp_map.get(y),
             "research_and_development": rnd_map.get(y),
             "selling_general_admin": sga_map.get(y),
+            "sales_and_marketing": sales_marketing_map.get(y),
+            "general_and_administrative": gna_map.get(y),
             "operating_income": op_map.get(y),
             "interest_expense": int_map.get(y),
+            "other_income_expense": other_map.get(y),
             "income_tax_expense": tax_map.get(y),
             "net_income": ni_map.get(y),
 
@@ -358,7 +384,10 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
                 "cost_of_revenue": stmt.excluded.cost_of_revenue,
                 "research_and_development": stmt.excluded.research_and_development,
                 "selling_general_admin": stmt.excluded.selling_general_admin,
+                "sales_and_marketing": stmt.excluded.sales_and_marketing,
+                "general_and_administrative": stmt.excluded.general_and_administrative,
                 "interest_expense": stmt.excluded.interest_expense,
+                "other_income_expense": stmt.excluded.other_income_expense,
                 "income_tax_expense": stmt.excluded.income_tax_expense,
                 "liabilities_current": stmt.excluded.liabilities_current,
                 "liabilities_longterm": stmt.excluded.liabilities_longterm,

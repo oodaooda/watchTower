@@ -19,6 +19,8 @@ COGS_TAGS = ["CostOfRevenue"]
 GP_TAGS = ["GrossProfit"]
 RND_TAGS = ["ResearchAndDevelopmentExpense"]
 SGA_TAGS = ["SellingGeneralAndAdministrativeExpense"]
+SALES_MARKETING_TAGS = ["SellingAndMarketingExpense", "SalesAndMarketingExpense"]
+GNA_TAGS = ["GeneralAndAdministrativeExpense", "GeneralAndAdministrativeExpenseOperating"]
 OPINC_TAGS = ["OperatingIncomeLoss"]
 INTEXP_TAGS = [
     "InterestExpense",
@@ -26,6 +28,12 @@ INTEXP_TAGS = [
     "InterestExpenseDebtExcludingAmortization",
     "InterestExpenseNonoperating",
     "FinanceLeaseInterestExpense",
+]
+OTHER_INC_TAGS = [
+    "OtherNonoperatingIncomeExpense",
+    "NonoperatingIncomeExpense",
+    "OtherIncomeExpense",
+    "OtherNonoperatingIncomeExpenseNet",
 ]
 TAXEXP_TAGS = ["IncomeTaxExpenseBenefit"]
 
@@ -57,8 +65,11 @@ FALLBACK_KEYWORDS = {
     "gross_profit": ["grossprofit","GrossProfit"],
     "research_and_development": ["researchanddevelopment", "rdexpense"],
     "selling_general_admin": ["sellinggeneral", "sga", "administrative", "sellinggeneralandadministrative"],
+    "sales_and_marketing": ["sales", "marketing"],
+    "general_and_administrative": ["generalandadministrative", "administrativeexpense"],
     "operating_income": ["operatingincome", "operatingincomeloss"],
     "interest_expense": ["interestexpense", "interestexpensedebt"],
+    "other_income_expense": ["otherincome", "nonoperating"],
     "income_tax_expense": ["incometax", "taxexpense"],
     "assets_total": ["assets", "total"],
     "liabilities_current": ["liabilities", "current"],

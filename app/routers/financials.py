@@ -65,8 +65,11 @@ def company_financials(
         gross_profit      = _num(getattr(r, "gross_profit", None))          # may not exist in table → None
         research_and_development = _num(getattr(r, "research_and_development", None))
         selling_general_admin    = _num(getattr(r, "selling_general_admin", None))
+        sales_and_marketing      = _num(getattr(r, "sales_and_marketing", None))
+        general_and_administrative = _num(getattr(r, "general_and_administrative", None))
         operating_income  = _num(getattr(r, "operating_income", None))      # may not exist in table → None
         interest_expense  = _num(getattr(r, "interest_expense", None))
+        other_income_expense = _num(getattr(r, "other_income_expense", None))
         income_tax_expense = _num(getattr(r, "income_tax_expense", None))
         net_income        = _num(getattr(r, "net_income", None))
 
@@ -108,8 +111,11 @@ def company_financials(
                 gross_profit=gross_profit,
                 research_and_development=research_and_development,
                 selling_general_admin=selling_general_admin,
+                sales_and_marketing=sales_and_marketing,
+                general_and_administrative=general_and_administrative,
                 operating_income=operating_income,
                 interest_expense=interest_expense,
+                other_income_expense=other_income_expense,
                 income_tax_expense=income_tax_expense,
                 net_income=net_income,
                 eps_diluted=eps_diluted,
