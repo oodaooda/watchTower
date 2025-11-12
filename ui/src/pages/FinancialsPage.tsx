@@ -220,7 +220,13 @@ export default function FinancialsPage() {
         isAnnual &&
         revenue !== null &&
         prevRevenue !== null &&
-        prevRevenue !== 0
+        prevRevenue !== 0 &&
+        Math.sign(prevRevenue) !== Math.sign(revenue)
+          ? null
+          : isAnnual &&
+            revenue !== null &&
+            prevRevenue !== null &&
+            prevRevenue !== 0
           ? revenue / prevRevenue - 1
           : null;
 
@@ -240,7 +246,13 @@ export default function FinancialsPage() {
         isAnnual &&
         grossMargin !== null &&
         prevGrossMargin !== null &&
-        prevGrossMargin !== 0
+        prevGrossMargin !== 0 &&
+        Math.sign(prevGrossMargin) !== Math.sign(grossMargin)
+          ? null
+          : isAnnual &&
+            grossMargin !== null &&
+            prevGrossMargin !== null &&
+            prevGrossMargin !== 0
           ? grossMargin / prevGrossMargin - 1
           : null;
 
@@ -250,7 +262,13 @@ export default function FinancialsPage() {
         isAnnual &&
         netIncome !== null &&
         prevNetIncome !== null &&
-        prevNetIncome !== 0
+        prevNetIncome !== 0 &&
+        Math.sign(prevNetIncome) !== Math.sign(netIncome)
+          ? null
+          : isAnnual &&
+            netIncome !== null &&
+            prevNetIncome !== null &&
+            prevNetIncome !== 0
           ? netIncome / prevNetIncome - 1
           : null;
 
@@ -476,6 +494,16 @@ export default function FinancialsPage() {
             >
               Pharma Insights →
             </button>
+          ) : null}
+          {company?.ticker ? (
+            <a
+              className={btn}
+              href={`https://www.sec.gov/edgar/browse/?CIK=${company.ticker}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              SEC Filings ↗
+            </a>
           ) : null}
         </div>
       </div>
