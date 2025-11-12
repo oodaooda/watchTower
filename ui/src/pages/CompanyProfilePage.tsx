@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ReactNode } from "react";
+import { CompanyNewsItem, fetchCompanyNews } from "../lib/api";
 import {
   ResponsiveContainer,
   LineChart,
@@ -217,6 +218,9 @@ export default function CompanyProfilePage() {
   const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[]>([]);
   const [priceHistoryLoading, setPriceHistoryLoading] = useState(false);
   const [priceHistoryError, setPriceHistoryError] = useState<string | null>(null);
+  const [newsItems, setNewsItems] = useState<CompanyNewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
 
   useEffect(() => {
     setSearchTicker(identifier ?? "");
@@ -301,6 +305,31 @@ export default function CompanyProfilePage() {
       cancelled = true;
     };
   }, [identifier, priceRange]);
+
+  useEffect(() => {
+    if (!identifier) return;
+    let cancelled = false;
+    setNewsLoading(true);
+    setNewsError(null);
+
+    fetchCompanyNews(identifier, 12)
+      .then((items) => {
+        if (!cancelled) setNewsItems(items ?? []);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setNewsError(err.message || "Unable to load news.");
+          setNewsItems([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNewsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
 
   const priceChartData = useMemo(() => {
     return priceHistory
@@ -661,9 +690,73 @@ export default function CompanyProfilePage() {
               </ResponsiveContainer>
             </ChartCard>
           </div>
+
+          <div className="grid gap-4">
+            <NewsCard items={newsItems} loading={newsLoading} error={newsError} />
+          </div>
         </>
       ) : (
         <div className="text-sm text-zinc-500">Enter a ticker to load its profile.</div>
+      )}
+    </div>
+  );
+}
+
+function NewsCard({
+  items,
+  loading,
+  error,
+}: {
+  items: CompanyNewsItem[];
+  loading: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
+      <div className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
+        News &amp; Sentiment
+      </div>
+      {loading ? (
+        <div className="text-xs text-zinc-500">Loading news…</div>
+      ) : error ? (
+        <div className="text-xs text-red-500">{error}</div>
+      ) : items.length === 0 ? (
+        <div className="text-xs text-zinc-500">No recent articles.</div>
+      ) : (
+        <ul className="space-y-3">
+          {items.slice(0, 8).map((item, idx) => (
+            <li key={item.id || item.url || idx} className="space-y-1">
+              <a
+                href={item.url ?? "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="block hover:bg-zinc-100/70 dark:hover:bg-zinc-900/60 rounded-xl px-3 py-2 transition"
+              >
+                <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  {item.title ?? "Untitled"}
+                </div>
+                <div className="text-[11px] uppercase tracking-wide text-zinc-500 flex items-center gap-2">
+                  {item.source || "Unknown Source"}
+                  {item.published_at && (
+                    <span className="text-zinc-400">
+                      • {formatRelativeTime(item.published_at) ?? item.published_at}
+                    </span>
+                  )}
+                  {item.sentiment && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200">
+                      {item.sentiment}
+                    </span>
+                  )}
+                </div>
+                {item.summary && (
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2 mt-1">
+                    {item.summary}
+                  </p>
+                )}
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -676,6 +769,27 @@ function Stat({ label, value, alignRight = true }: { label: string; value: React
       <div className={`text-sm font-semibold mt-1 ${alignRight ? "text-right" : ""}`}>{value ?? "—"}</div>
     </div>
   );
+}
+
+function formatRelativeTime(iso?: string | null): string | null {
+  if (!iso) return null;
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return null;
+  const diff = Date.now() - dt.getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < hour) {
+    const m = Math.max(1, Math.round(diff / minute));
+    return `${m}m ago`;
+  }
+  if (diff < day) {
+    const h = Math.round(diff / hour);
+    return `${h}h ago`;
+  }
+  const d = Math.round(diff / day);
+  if (d < 7) return `${d}d ago`;
+  return dt.toLocaleDateString();
 }
 
 function formatPriceTick(value: number, range: PriceHistoryRange): string {

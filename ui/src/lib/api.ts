@@ -94,6 +94,27 @@ export async function fetchValuationSummary(tickers: string[]): Promise<
   return res.json();
 }
 
+// -------- Company News --------
+
+export type CompanyNewsItem = {
+  id?: string | null;
+  title?: string | null;
+  url?: string | null;
+  summary?: string | null;
+  source?: string | null;
+  image_url?: string | null;
+  published_at?: string | null;
+  sentiment?: string | null;
+  tickers?: string[];
+};
+
+export async function fetchCompanyNews(identifier: string, limit = 12): Promise<CompanyNewsItem[]> {
+  const res = await fetch(`${API_BASE}/prices/${identifier}/news?limit=${limit}`);
+  if (!res.ok) throw new Error(`news ${res.status}`);
+  const data = await res.json();
+  return data?.items ?? [];
+}
+
 // -------- Pharma endpoints --------
 
 export type PharmaCompanyListItem = {

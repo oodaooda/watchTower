@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -22,9 +22,12 @@ ALPHA_ENDPOINT = "https://www.alphavantage.co/query"
 # chart toggles ranges repeatedly.
 CacheEntry = Tuple[float, List[Tuple[datetime, float]]]
 _CACHE: Dict[Tuple[str, str, Optional[str]], CacheEntry] = {}
+NewsCacheEntry = Tuple[float, List[Dict[str, Any]]]
+_NEWS_CACHE: Dict[Tuple[str, str], NewsCacheEntry] = {}
 
 INTRADAY_TTL = 60 * 5       # 5 minutes
 DAILY_TTL = 60 * 60 * 3     # 3 hours
+NEWS_TTL = 60 * 10          # 10 minutes
 
 PriceRange = Query(
     "5y",
@@ -68,6 +71,25 @@ def price_history(
         "source": "alpha_vantage",
         "points": payload,
     }
+
+
+@router.get("/{identifier}/news")
+def company_news(
+    identifier: str = Path(..., description="Company id or ticker symbol"),
+    limit: int = Query(12, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    company = _resolve_company(db, identifier)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    api_key = settings.alpha_vantage_api_key
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Alpha Vantage API key not configured")
+
+    symbol = company.ticker.upper()
+    items = _get_company_news(symbol, api_key, limit)
+    return {"ticker": symbol, "items": items}
 
 
 def _get_intraday(symbol: str, api_key: str, interval: str) -> List[Tuple[datetime, float]]:
@@ -132,6 +154,58 @@ def _get_daily(symbol: str, api_key: str) -> List[Tuple[datetime, float]]:
     points.sort(key=lambda item: item[0])
     _CACHE[cache_key] = (time.time(), points)
     return points
+
+
+def _get_company_news(symbol: str, api_key: str, limit: int) -> List[Dict[str, Any]]:
+    cache_key = (symbol, str(limit))
+    cached = _news_cache_get(cache_key, NEWS_TTL)
+    if cached is not None:
+        return cached
+
+    params = {
+        "function": "NEWS_SENTIMENT",
+        "tickers": symbol,
+        "sort": "LATEST",
+        "limit": str(limit),
+        "apikey": api_key,
+    }
+    data = _alpha_request(params)
+    feed = data.get("feed", [])
+    items: List[Dict[str, Any]] = []
+    for entry in feed:
+        if not isinstance(entry, dict):
+            continue
+        tickers = []
+        for ts in entry.get("ticker_sentiment", []) or []:
+            if isinstance(ts, dict):
+                ticker = ts.get("ticker")
+                if ticker:
+                    tickers.append(ticker)
+
+        published = entry.get("time_published")
+        normalized_time = _normalize_news_time(published)
+
+        items.append(
+            {
+                "id": entry.get("uuid") or entry.get("url"),
+                "title": entry.get("title"),
+                "summary": entry.get("summary"),
+                "url": entry.get("url"),
+                "source": entry.get("source"),
+                "image_url": entry.get("banner_image"),
+                "published_at": normalized_time,
+                "sentiment": entry.get("overall_sentiment_label"),
+                "tickers": tickers,
+            }
+        )
+
+    # Prefer articles that explicitly reference the requested symbol
+    filtered = [item for item in items if symbol in (item.get("tickers") or [])]
+    if not filtered:
+        filtered = items
+
+    _NEWS_CACHE[cache_key] = (time.time(), filtered)
+    return filtered
 
 
 def _slice_intraday(points: List[Tuple[datetime, float]]) -> List[Tuple[datetime, float]]:
@@ -211,6 +285,29 @@ def _cache_get(key: Tuple[str, str, Optional[str]], ttl: int) -> Optional[List[T
     if time.time() - ts > ttl:
         _CACHE.pop(key, None)
         return None
+    return value
+
+
+def _news_cache_get(key: Tuple[str, str], ttl: int) -> Optional[List[Dict[str, Any]]]:
+    entry = _NEWS_CACHE.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if time.time() - ts > ttl:
+        _NEWS_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _normalize_news_time(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y%m%dT%H%M%SZ"):
+        try:
+            dt = datetime.strptime(value, fmt)
+            return dt.replace(tzinfo=None).isoformat() + "Z"
+        except ValueError:
+            continue
     return value
 
 
