@@ -57,12 +57,12 @@ def list_companies(
     }
 
 
-@router.get("/{company_id}", response_model=CompanyOut)
+@router.get("/{identifier}", response_model=CompanyOut)
 def get_company(
-    company_id: int = Path(..., description="Numeric company primary key (companies.id)"),
+    identifier: str = Path(..., description="Company id or ticker symbol"),
     db: Session = Depends(get_db),
 ):
-    co = db.get(Company, company_id)
+    co = _resolve_company(db, identifier)
     if not co:
         raise HTTPException(status_code=404, detail="Company not found")
     return CompanyOut.model_validate(co)

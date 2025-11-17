@@ -483,7 +483,11 @@ export default function FinancialsPage() {
               className="h-8 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
               placeholder="Ticker…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                setSearch(next);
+              }}
+              inputMode="text"
             />
             <button className={btn} type="submit">
               Go

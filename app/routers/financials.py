@@ -13,12 +13,12 @@ Notes:
 from __future__ import annotations
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.models import FinancialAnnual, FinancialQuarterly
+from app.core.models import FinancialAnnual, FinancialQuarterly, Company
 from app.core.schemas import FinancialAnnualOut, FinancialQuarterlyOut
 
 router = APIRouter()
@@ -33,26 +33,51 @@ def _coalesce(*vals):
     return None
 
 
+def _resolve_company(db: Session, identifier: str) -> Company | None:
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    # Try numeric id
+    try:
+        cid = int(ident)
+    except ValueError:
+        cid = None
+    if cid is not None:
+        co = db.get(Company, cid)
+        if co:
+            return co
+    # Fallback to ticker (case-insensitive)
+    return db.execute(
+        select(Company).where(Company.ticker == ident.upper())
+    ).scalar_one_or_none()
 
-@router.get("/quarterly/{company_id}", response_model=List[FinancialQuarterlyOut])
-def get_quarterly(company_id: int, db: Session = Depends(get_db)):
+
+
+@router.get("/quarterly/{identifier}", response_model=List[FinancialQuarterlyOut])
+def get_quarterly(identifier: str, db: Session = Depends(get_db)):
+    company = _resolve_company(db, identifier)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
     q = (
         select(FinancialQuarterly)
-        .where(FinancialQuarterly.company_id == company_id)
+        .where(FinancialQuarterly.company_id == company.id)
         .order_by(FinancialQuarterly.fiscal_year.desc(), FinancialQuarterly.fiscal_period.desc())
         .limit(16)
     )
     rows = db.scalars(q).all()
     return list(reversed(rows))  # oldest -> newest
 
-@router.get("/{company_id}", response_model=List[FinancialAnnualOut])
+@router.get("/{identifier}", response_model=List[FinancialAnnualOut])
 def company_financials(
-    company_id: int = Path(..., description="Numeric company primary key (companies.id)"),
+    identifier: str = Path(..., description="Company id or ticker symbol"),
     db: Session = Depends(get_db),
 ):
+    company = _resolve_company(db, identifier)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
     stmt = (
         select(FinancialAnnual)
-        .where(FinancialAnnual.company_id == company_id)
+        .where(FinancialAnnual.company_id == company.id)
         .order_by(FinancialAnnual.fiscal_year)
     )
     rows = db.scalars(stmt).all()
