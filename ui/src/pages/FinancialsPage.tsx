@@ -50,6 +50,7 @@ type Company = {
   id: number;
   ticker: string;
   name: string;
+  cik?: number | string | null;
   description?: string | null;
 };
 
@@ -90,6 +91,13 @@ function useContainerWidth<T extends HTMLElement>() {
     return () => ro.disconnect();
   }, []);
   return { ref, w };
+}
+
+function formatCik(value?: number | string | null): string | null {
+  if (value === null || value === undefined) return null;
+  const digits = String(value).replace(/\D/g, "");
+  if (!digits) return null;
+  return digits.padStart(10, "0");
 }
 
 export default function FinancialsPage() {
@@ -153,6 +161,10 @@ export default function FinancialsPage() {
   const displayRows = useMemo(() => {
     if (rows.length === 0) return rows;
     const isAnnual = mode === "annual";
+    const rowLookup = new Map<string, Row>();
+    rows.forEach((row) => {
+      rowLookup.set(`${row.fiscal_year}-${row.fiscal_period ?? "FY"}`, row);
+    });
 
     const safeSum = (...vals: Array<number | null | undefined>) => {
       let total = 0;
@@ -174,6 +186,14 @@ export default function FinancialsPage() {
     };
 
     return rows.map((row, idx) => {
+      const prevBaseline = isAnnual
+        ? idx > 0
+          ? rows[idx - 1]
+          : undefined
+        : row.fiscal_period
+        ? rowLookup.get(`${row.fiscal_year - 1}-${row.fiscal_period}`)
+        : undefined;
+
       const revenue = row.revenue ?? null;
       const cogs = row.cost_of_revenue ?? null;
 
@@ -215,60 +235,37 @@ export default function FinancialsPage() {
         pretax = operatingIncome ?? null;
       }
 
-      const prevRevenue = idx > 0 ? rows[idx - 1]?.revenue ?? null : null;
+      const prevRevenue = prevBaseline?.revenue ?? null;
       const revenueYoY =
-        isAnnual &&
         revenue !== null &&
         prevRevenue !== null &&
         prevRevenue !== 0 &&
-        Math.sign(prevRevenue) !== Math.sign(revenue)
-          ? null
-          : isAnnual &&
-            revenue !== null &&
-            prevRevenue !== null &&
-            prevRevenue !== 0
+        Math.sign(prevRevenue) === Math.sign(revenue)
           ? revenue / prevRevenue - 1
           : null;
 
-      const prevRow = idx > 0 ? rows[idx - 1] : undefined;
       const prevGrossMargin =
-        isAnnual &&
-        prevRow &&
-        prevRow.revenue !== null &&
-        prevRow.revenue !== undefined &&
-        prevRow.cost_of_revenue !== null &&
-        prevRow.cost_of_revenue !== undefined
-          ? (prevRow.revenue ?? 0) - (prevRow.cost_of_revenue ?? 0)
-          : isAnnual
-          ? prevRow?.gross_profit ?? null
-          : null;
+        prevBaseline &&
+        prevBaseline.revenue !== null &&
+        prevBaseline.revenue !== undefined &&
+        prevBaseline.cost_of_revenue !== null &&
+        prevBaseline.cost_of_revenue !== undefined
+          ? (prevBaseline.revenue ?? 0) - (prevBaseline.cost_of_revenue ?? 0)
+          : prevBaseline?.gross_profit ?? null;
       const grossMarginYoY =
-        isAnnual &&
         grossMargin !== null &&
         prevGrossMargin !== null &&
         prevGrossMargin !== 0 &&
-        Math.sign(prevGrossMargin) !== Math.sign(grossMargin)
-          ? null
-          : isAnnual &&
-            grossMargin !== null &&
-            prevGrossMargin !== null &&
-            prevGrossMargin !== 0
+        Math.sign(prevGrossMargin) === Math.sign(grossMargin)
           ? grossMargin / prevGrossMargin - 1
           : null;
 
-      const prevNetIncome =
-        idx > 0 ? rows[idx - 1]?.net_income ?? null : null;
+      const prevNetIncome = prevBaseline?.net_income ?? null;
       const netIncomeYoY =
-        isAnnual &&
         netIncome !== null &&
         prevNetIncome !== null &&
         prevNetIncome !== 0 &&
-        Math.sign(prevNetIncome) !== Math.sign(netIncome)
-          ? null
-          : isAnnual &&
-            netIncome !== null &&
-            prevNetIncome !== null &&
-            prevNetIncome !== 0
+        Math.sign(prevNetIncome) === Math.sign(netIncome)
           ? netIncome / prevNetIncome - 1
           : null;
 
@@ -308,105 +305,95 @@ export default function FinancialsPage() {
     (row as any)?.[k] as number | null | undefined;
 
   const incomeLines = useMemo(() => {
-    if (mode === "annual") {
-      return [
-        { key: "revenue", label: "Revenue", strong: true },
-        { key: "cost_of_revenue", label: "COGS" },
-        {
-          key: "gross_margin_calc",
-          label: "Gross Margin",
-          strong: true,
-          derived: true,
-        },
-        { key: "research_and_development", label: "R&D Expense" },
-        { key: "sales_and_marketing", label: "Sales & Marketing" },
-        { key: "general_and_administrative", label: "General & Administrative" },
-        {
-          key: "operating_expense_calc",
-          label: "Operating Expenses",
-          strong: true,
-          derived: true,
-        },
-        {
-          key: "operating_income_calc",
-          label: "Operating Income",
-          strong: true,
-          derived: true,
-        },
-        { key: "other_income_expense", label: "Other Income (Expense)" },
-        { key: "interest_expense", label: "Interest Expense" },
-        {
-          key: "pretax_income_calc",
-          label: "Pretax Income",
-          strong: true,
-          derived: true,
-        },
-        { key: "income_tax_expense", label: "Tax Expense" },
-        { key: "net_income", label: "Net Income", strong: true },
-        {
-          key: "eps_diluted",
-          label: "EPS (Diluted, proxy)",
-          fmt: (v?: number | null) =>
-            formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
-        },
-        {
-          key: "shares_outstanding",
-          label: "Shares Outstanding",
-          fmt: (v?: number | null) =>
-            formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
-        },
-        {
-          key: "revenue_yoy",
-          label: "Revenue YoY %",
-          derived: true,
-          fmt: (v?: number | null) => formatPercent(v),
-        },
-        {
-          key: "gross_margin_pct",
-          label: "Gross Margin %",
-          derived: true,
-          fmt: (v?: number | null) => formatPercent(v),
-        },
-        {
-          key: "operating_margin_pct",
-          label: "Operating Margin %",
-          derived: true,
-          fmt: (v?: number | null) => formatPercent(v),
-        },
-        {
-          key: "gross_margin_yoy",
-          label: "Gross Margin YoY %",
-          derived: true,
-          fmt: (v?: number | null) => formatPercent(v),
-        },
-        {
-          key: "net_income_yoy",
-          label: "Net Income YoY %",
-          derived: true,
-          fmt: (v?: number | null) => formatPercent(v),
-        },
-      ] as const;
-    }
-
-    return [
-      { key: "revenue", label: "Revenue" },
-      { key: "cost_of_revenue", label: "Cost of Revenue" },
-      { key: "gross_profit", label: "Gross Profit" },
+    const derivedBlock = [
+      {
+        key: "gross_margin_calc",
+        label: "Gross Margin",
+        strong: true,
+        derived: true,
+      },
       { key: "research_and_development", label: "R&D Expense" },
       { key: "sales_and_marketing", label: "Sales & Marketing" },
       { key: "general_and_administrative", label: "General & Administrative" },
-      { key: "operating_income", label: "Operating Income" },
-      { key: "net_income", label: "Net Income" },
+      {
+        key: "operating_expense_calc",
+        label: "Operating Expenses",
+        strong: true,
+        derived: true,
+      },
+      {
+        key: "operating_income_calc",
+        label: "Operating Income",
+        strong: true,
+        derived: true,
+      },
       { key: "other_income_expense", label: "Other Income (Expense)" },
       { key: "interest_expense", label: "Interest Expense" },
+      {
+        key: "pretax_income_calc",
+        label: "Pretax Income",
+        strong: true,
+        derived: true,
+      },
       { key: "income_tax_expense", label: "Tax Expense" },
+      { key: "net_income", label: "Net Income", strong: true },
       {
         key: "eps_diluted",
         label: "EPS (Diluted, proxy)",
         fmt: (v?: number | null) =>
           formatNum(v, { notation: "standard", maximumFractionDigits: 2 }),
       },
+      {
+        key: "shares_outstanding",
+        label: "Shares Outstanding",
+        fmt: (v?: number | null) =>
+          formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
+      },
+      {
+        key: "revenue_yoy",
+        label: "Revenue YoY %",
+        derived: true,
+        fmt: (v?: number | null) => formatPercent(v),
+      },
+      {
+        key: "gross_margin_pct",
+        label: "Gross Margin %",
+        derived: true,
+        fmt: (v?: number | null) => formatPercent(v),
+      },
+      {
+        key: "operating_margin_pct",
+        label: "Operating Margin %",
+        derived: true,
+        fmt: (v?: number | null) => formatPercent(v),
+      },
+      {
+        key: "gross_margin_yoy",
+        label: "Gross Margin YoY %",
+        derived: true,
+        fmt: (v?: number | null) => formatPercent(v),
+      },
+      {
+        key: "net_income_yoy",
+        label: "Net Income YoY %",
+        derived: true,
+        fmt: (v?: number | null) => formatPercent(v),
+      },
     ] as const;
+
+    if (mode === "annual") {
+      return [
+        { key: "revenue", label: "Revenue", strong: true },
+        { key: "cost_of_revenue", label: "COGS" },
+        ...derivedBlock,
+      ] as const;
+    }
+
+    return [
+      { key: "revenue", label: "Revenue" },
+      { key: "cost_of_revenue", label: "Cost of Revenue" },
+      ...derivedBlock.filter((ln) => ln.key !== "gross_margin_calc"), // gross margin calc already included but OK
+    ];
   }, [mode]);
 
   const balanceLines = useMemo(() => {
@@ -495,16 +482,22 @@ export default function FinancialsPage() {
               Pharma Insights →
             </button>
           ) : null}
-          {company?.ticker ? (
-            <a
-              className={btn}
-              href={`https://www.sec.gov/edgar/browse/?CIK=${company.ticker}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              SEC Filings ↗
-            </a>
-          ) : null}
+          {(() => {
+            if (!company) return null;
+            const cik = formatCik(company.cik);
+            const href = cik
+              ? `https://www.sec.gov/edgar/browse/?CIK=${cik}`
+              : company.ticker
+              ? `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(
+                  company.ticker
+                )}`
+              : null;
+            return href ? (
+              <a className={btn} href={href} target="_blank" rel="noreferrer">
+                SEC Filings ↗
+              </a>
+            ) : null;
+          })()}
         </div>
       </div>
 

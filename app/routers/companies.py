@@ -3,11 +3,14 @@ from fastapi import APIRouter, Query, Depends, HTTPException, Path
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, List
+import requests
+import time
 
 from app.core.db import get_db
 from app.core.models import Company, FinancialAnnual, MetricsAnnual, PriceAnnual
 from app.core.schemas import CompanyOut, CompanyProfileOut, ProfileSeries, ProfileSeriesPoint
 from app.routers.valuation import compute_quick_valuation
+from app.core.config import settings
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -98,7 +101,11 @@ def get_company_profile(
 
     valuation = compute_quick_valuation(db, company) if company else {}
     price = _to_float((valuation or {}).get("price"))
-    if price is None and latest_price is not None:
+
+    live_price = _fetch_live_price(company.ticker) if company else None
+    if live_price is not None:
+        price = live_price
+    elif price is None and latest_price is not None:
         price = _to_float(latest_price.close_price)
 
     shares = _to_float(getattr(latest_financial, "shares_outstanding", None))
@@ -112,35 +119,79 @@ def get_company_profile(
     elif latest_price and getattr(latest_price, "fiscal_year", None) is not None:
         latest_year = int(latest_price.fiscal_year)
 
+    eps_ttm = None
+    shares = _to_float(getattr(latest_financial, "shares_outstanding", None))
+    if shares and latest_financial and latest_financial.net_income not in (None,):
+        eps_ttm = _ratio(_to_float(latest_financial.net_income), shares)
+
     valuation_block = {
         "price": price,
         "fair_value_per_share": _to_float((valuation or {}).get("fair_value_per_share")),
         "upside_vs_price": _to_float((valuation or {}).get("upside_vs_price")),
-        "pe_ttm": _to_float(getattr(latest_price, "pe_ttm", None)),
+        "pe_ttm": _coalesce(
+            _to_float(getattr(latest_price, "pe_ttm", None)),
+            _ratio(price, eps_ttm) if price is not None and eps_ttm and eps_ttm != 0 else None,
+        ),
     }
 
     total_debt = _to_float(getattr(latest_financial, "total_debt", None))
     equity_total = _to_float(getattr(latest_financial, "equity_total", None))
 
+    cash_balance = _to_float(getattr(latest_financial, "cash_and_sti", None))
+    operating_income_val = _to_float(getattr(latest_financial, "operating_income", None))
+    interest_expense_val = _to_float(getattr(latest_financial, "interest_expense", None))
+
     financial_strength_block = {
-        "cash_debt_ratio": _to_float(getattr(latest_metrics, "cash_debt_ratio", None)),
+        "cash_debt_ratio": _coalesce(
+            _to_float(getattr(latest_metrics, "cash_debt_ratio", None)),
+            _ratio(cash_balance, total_debt),
+        ),
         "debt_to_equity": _ratio(total_debt, equity_total),
         "debt_ebitda": _to_float(getattr(latest_metrics, "debt_ebitda", None)),
-        "interest_coverage": _to_float(getattr(latest_metrics, "interest_coverage", None)),
+        "interest_coverage": _coalesce(
+            _to_float(getattr(latest_metrics, "interest_coverage", None)),
+            _ratio(operating_income_val, interest_expense_val),
+        ),
     }
 
+    revenue_latest = _to_float(getattr(latest_financial, "revenue", None))
+    gross_profit_latest = _to_float(getattr(latest_financial, "gross_profit", None))
     profitability_block = {
-        "gross_margin": _to_float(getattr(latest_metrics, "gross_margin", None)),
-        "op_margin": _to_float(getattr(latest_metrics, "op_margin", None)),
-        "roe": _to_float(getattr(latest_metrics, "roe", None)),
-        "roic": _to_float(getattr(latest_metrics, "roic", None)),
+        "gross_margin": _coalesce(
+            _to_float(getattr(latest_metrics, "gross_margin", None)),
+            _ratio(gross_profit_latest, revenue_latest),
+        ),
+        "op_margin": _coalesce(
+            _to_float(getattr(latest_metrics, "op_margin", None)),
+            _ratio(operating_income_val, revenue_latest),
+        ),
+        "roe": _coalesce(
+            _to_float(getattr(latest_metrics, "roe", None)),
+            _ratio(_to_float(getattr(latest_financial, "net_income", None)), equity_total),
+        ),
+        "roic": _coalesce(
+            _to_float(getattr(latest_metrics, "roic", None)),
+            _compute_roic(latest_financial),
+        ),
     }
 
     growth_block = {
-        "rev_cagr_5y": _to_float(getattr(latest_metrics, "rev_cagr_5y", None)),
-        "ni_cagr_5y": _to_float(getattr(latest_metrics, "ni_cagr_5y", None)),
-        "rev_yoy": _to_float(getattr(latest_metrics, "rev_yoy", None)),
-        "ni_yoy": _to_float(getattr(latest_metrics, "ni_yoy", None)),
+        "rev_cagr_5y": _coalesce(
+            _to_float(getattr(latest_metrics, "rev_cagr_5y", None)),
+            _compute_cagr(financial_rows, "revenue", years=5),
+        ),
+        "ni_cagr_5y": _coalesce(
+            _to_float(getattr(latest_metrics, "ni_cagr_5y", None)),
+            _compute_cagr(financial_rows, "net_income", years=5),
+        ),
+        "rev_yoy": _coalesce(
+            _to_float(getattr(latest_metrics, "rev_yoy", None)),
+            _compute_yoy(financial_rows, "revenue"),
+        ),
+        "ni_yoy": _coalesce(
+            _to_float(getattr(latest_metrics, "ni_yoy", None)),
+            _compute_yoy(financial_rows, "net_income"),
+        ),
         "fcf_cagr_5y": _to_float(getattr(latest_metrics, "fcf_cagr_5y", None)),
     }
 
@@ -167,13 +218,20 @@ def get_company_profile(
         "accounts_payable": _to_float(getattr(latest_financial, "accounts_payable", None)),
     }
 
+    fcf_value = _to_float(
+        getattr(latest_financial, "fcf", None)
+        if latest_financial is not None
+        else getattr(latest_metrics, "fcf", None)
+    )
     cash_flow_block = {
         "cfo": _to_float(getattr(latest_financial, "cfo", None)),
         "capex": _to_float(getattr(latest_financial, "capex", None)),
-        "fcf": _to_float(
-            getattr(latest_financial, "fcf", None)
-            if latest_financial is not None
-            else getattr(latest_metrics, "fcf", None)
+        "fcf": _coalesce(
+            fcf_value,
+            _net_cash_flow(
+                _to_float(getattr(latest_financial, "cfo", None)),
+                _to_float(getattr(latest_financial, "capex", None)),
+            ),
         ),
         "dividends_paid": _to_float(getattr(latest_financial, "dividends_paid", None)),
         "share_repurchases": _to_float(getattr(latest_financial, "share_repurchases", None)),
@@ -219,6 +277,145 @@ def _ratio(numerator: Optional[float], denominator: Optional[float]) -> Optional
     try:
         return numerator / denominator if denominator else None
     except ZeroDivisionError:
+        return None
+
+
+def _coalesce(*values: Optional[float]) -> Optional[float]:
+    for v in values:
+        if v is not None:
+            return v
+    return None
+
+
+def _compute_yoy(rows: List[FinancialAnnual], attr: str) -> Optional[float]:
+    if len(rows) < 2:
+        return None
+
+    latest = rows[-1]
+    latest_year = getattr(latest, "fiscal_year", None)
+    latest_val = _to_float(getattr(latest, attr, None))
+    if latest_year is None or latest_val is None:
+        return None
+
+    comparison: Optional[FinancialAnnual] = None
+    for row in reversed(rows[:-1]):
+        year = getattr(row, "fiscal_year", None)
+        if year is None:
+            continue
+        if latest_year - year >= 1:
+            comparison = row
+            break
+    if comparison is None:
+        comparison = rows[-2]
+
+    prev_val = _to_float(getattr(comparison, attr, None))
+    if prev_val in (None, 0):
+        return None
+    if (prev_val < 0) != (latest_val < 0):
+        return None
+    return latest_val / prev_val - 1
+
+
+def _compute_cagr(rows: List[FinancialAnnual], attr: str, years: int = 5) -> Optional[float]:
+    if len(rows) < 2:
+        return None
+    latest = rows[-1]
+    latest_year = getattr(latest, "fiscal_year", None)
+    latest_val = _to_float(getattr(latest, attr, None))
+    if latest_year is None or latest_val is None or latest_val <= 0:
+        return None
+
+    base_row: Optional[FinancialAnnual] = None
+    for row in rows[:-1]:
+        year = getattr(row, "fiscal_year", None)
+        if year is None:
+            continue
+        if latest_year - year >= years:
+            base_row = row
+    if base_row is None:
+        base_row = rows[0]
+
+    base_year = getattr(base_row, "fiscal_year", None)
+    base_val = _to_float(getattr(base_row, attr, None))
+    if base_year is None or base_val is None or base_val <= 0:
+        return None
+
+    year_span = latest_year - base_year
+    if year_span <= 0:
+        return None
+    try:
+        return (latest_val / base_val) ** (1 / year_span) - 1
+    except (ZeroDivisionError, ValueError):
+        return None
+
+
+def _net_cash_flow(cfo: Optional[float], capex: Optional[float]) -> Optional[float]:
+    if cfo is None or capex is None:
+        return None
+    return cfo - capex
+
+
+def _compute_roic(financial: Optional[FinancialAnnual]) -> Optional[float]:
+    if financial is None:
+        return None
+    net_income = _to_float(getattr(financial, "net_income", None))
+    interest_expense = _to_float(getattr(financial, "interest_expense", None))
+    tax_expense = _to_float(getattr(financial, "income_tax_expense", None))
+    equity = _to_float(getattr(financial, "equity_total", None))
+    debt = _to_float(getattr(financial, "total_debt", None))
+    cash = _to_float(getattr(financial, "cash_and_sti", None))
+
+    if net_income is None or equity is None or debt is None:
+        return None
+
+    # Approximate tax rate; guard against divide-by-zero
+    tax_rate = None
+    if net_income + (tax_expense or 0) != 0:
+        tax_rate = _ratio(tax_expense, net_income + (tax_expense or 0))
+    if tax_rate is None or tax_rate < 0:
+        tax_rate = 0.21  # fallback
+
+    nopat = net_income + (interest_expense or 0) * (1 - tax_rate)
+    invested_capital = (equity or 0) + (debt or 0) - (cash or 0)
+    if invested_capital == 0:
+        return None
+    return nopat / invested_capital
+
+
+def _fetch_live_price(ticker: str) -> Optional[float]:
+    key = settings.alpha_vantage_api_key
+    if not key:
+        return None
+    # basic cache to avoid hammering
+    cache_key = f"quote:{ticker.upper()}"
+    now = time.time()
+    if not hasattr(_fetch_live_price, "_cache"):
+        _fetch_live_price._cache = {}
+    cache = _fetch_live_price._cache
+    if cache_key in cache:
+        ts, val = cache[cache_key]
+        if now - ts < 60:  # 1 minute TTL
+            return val
+    try:
+        params = {
+            "function": "TIME_SERIES_INTRADAY",
+            "symbol": ticker.upper(),
+            "interval": "5min",
+            "outputsize": "compact",
+            "apikey": key,
+        }
+        resp = requests.get("https://www.alphavantage.co/query", params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        series_key = "Time Series (5min)"
+        series = data.get(series_key)
+        if not series:
+            return None
+        latest_ts = sorted(series.keys())[-1]
+        close = float(series[latest_ts]["4. close"])
+        cache[cache_key] = (now, close)
+        return close
+    except Exception:
         return None
 
 
