@@ -107,14 +107,10 @@ export default function FinancialsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"annual" | "quarterly">("annual");
-  const [search, setSearch] = useState(companyId ?? "");
+  const [search, setSearch] = useState("");
 
   // 🔹 Company state
   const [company, setCompany] = useState<Company | null>(null);
-
-  useEffect(() => {
-    setSearch(companyId ?? "");
-  }, [companyId]);
 
   // fetch company details
   useEffect(() => {
@@ -466,27 +462,32 @@ export default function FinancialsPage() {
       className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4 space-y-3"
     >
       {/* Back to Screener */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
-            ← Back to Screener
-          </button>
-          <form
-            className="flex items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const trimmed = (search || "").trim().toUpperCase();
-              if (trimmed) navigate(`/financials/${trimmed}`);
-            }}
-          >
-            <input
-              className="h-8 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
-              placeholder="Ticker…"
-              value={search}
-              onChange={(e) => {
-                const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-                setSearch(next);
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
+              ← Back to Screener
+            </button>
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = (search || "").trim().toUpperCase();
+                if (trimmed) {
+                  navigate(`/financials/${trimmed}`);
+                } else {
+                  setRows([]);
+                  setCompany(null);
+                }
               }}
+            >
+              <input
+                className="h-8 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm"
+                placeholder="Search ticker…"
+                value={search}
+                onChange={(e) => {
+                  const next = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                  setSearch(next);
+                }}
               inputMode="text"
             />
             <button className={btn} type="submit">
