@@ -108,6 +108,8 @@ export default function FinancialsPage() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"annual" | "quarterly">("annual");
   const [search, setSearch] = useState("");
+  const [refreshStatus, setRefreshStatus] = useState<"idle" | "checking" | "refreshed" | "up_to_date" | "error">("idle");
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
   // 🔹 Company state
   const [company, setCompany] = useState<Company | null>(null);
@@ -158,6 +160,36 @@ export default function FinancialsPage() {
       alive = false;
     };
   }, [companyId, mode]);
+
+  // auto-refresh if stale
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    setRefreshStatus("checking");
+    setRefreshMessage(null);
+    fetch(`${API}/financials/${companyId}/refresh_if_stale`, { method: "POST" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `refresh ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setRefreshStatus(data?.status === "refreshed" ? "refreshed" : "up_to_date");
+        if (data?.sec_latest) setRefreshMessage(`Latest SEC: ${data.sec_latest}`);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setRefreshStatus("error");
+        setRefreshMessage(err.message || "Refresh failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   const displayRows = useMemo(() => {
     if (rows.length === 0) return rows;
@@ -495,7 +527,7 @@ export default function FinancialsPage() {
             </button>
           </form>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           {company ? (
             <button
               className={btn}
@@ -528,6 +560,13 @@ export default function FinancialsPage() {
               </a>
             ) : null;
           })()}
+          <span className="text-xs text-zinc-500">
+            {refreshStatus === "checking" && "Checking…"}
+            {refreshStatus === "refreshed" && "Refreshed"}
+            {refreshStatus === "up_to_date" && "Up to date"}
+            {refreshStatus === "error" && "Refresh failed"}
+            {refreshMessage ? ` • ${refreshMessage}` : ""}
+          </span>
         </div>
       </div>
 

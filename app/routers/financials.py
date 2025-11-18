@@ -14,12 +14,16 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Path, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.models import FinancialAnnual, FinancialQuarterly, Company
 from app.core.schemas import FinancialAnnualOut, FinancialQuarterlyOut
+from app.etl.sec_fetch_companyfacts import fetch_companyfacts, extract_quarterly_usd_facts
+from app.etl.sec_utils import REV_TAGS
+from ops.run_backfill import backfill_company
+from ops.run_backfill_quarterly import backfill_company_quarterly
 
 router = APIRouter()
 
@@ -50,6 +54,32 @@ def _resolve_company(db: Session, identifier: str) -> Company | None:
     return db.execute(
         select(Company).where(Company.ticker == ident.upper())
     ).scalar_one_or_none()
+
+
+def _latest_period_from_cf(cf: dict) -> tuple[int, str] | None:
+    latest = None
+    series = extract_quarterly_usd_facts(cf, REV_TAGS[0])
+    for item in series:
+        fy = item.get("fy")
+        fp = item.get("fp")
+        if fy and fp:
+            fy = int(fy)
+            if latest is None or (fy, fp) > latest:
+                latest = (fy, fp)
+    return latest
+
+
+def _is_sec_newer(stored: tuple[int, str] | None, sec_latest: tuple[int, str]) -> bool:
+    if stored is None:
+        return True
+    fy_s, fp_s = stored
+    fy_sec, fp_sec = sec_latest
+    order = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4, "FY": 5}
+    if fy_sec > fy_s:
+        return True
+    if fy_sec == fy_s and order.get(fp_sec, 0) > order.get(fp_s, 0):
+        return True
+    return False
 
 
 
@@ -169,3 +199,45 @@ def company_financials(
         )
 
     return out
+
+
+@router.post("/{identifier}/refresh_if_stale")
+def refresh_if_stale(
+    identifier: str = Path(..., description="Company id or ticker symbol"),
+    db: Session = Depends(get_db),
+):
+    company = _resolve_company(db, identifier)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    # Latest stored quarterly period
+    latest_stored = db.execute(
+        select(FinancialQuarterly.fiscal_year, FinancialQuarterly.fiscal_period)
+        .where(FinancialQuarterly.company_id == company.id)
+        .order_by(FinancialQuarterly.fiscal_year.desc(), FinancialQuarterly.fiscal_period.desc())
+        .limit(1)
+    ).first()
+    stored_label = None
+    if latest_stored:
+        stored_label = f"{latest_stored.fiscal_year} {latest_stored.fiscal_period}"
+
+    # Latest available period from SEC
+    cf = fetch_companyfacts(int(company.cik)) if company.cik else None
+    sec_latest = None
+    if cf:
+        sec_latest = _latest_period_from_cf(cf)
+
+    refreshed = False
+    if sec_latest:
+        # compare fy/fp ordering
+        if _is_sec_newer(latest_stored, sec_latest):
+            # run backfills
+            refreshed = True
+            backfill_company(db, company, debug=False)
+            backfill_company_quarterly(db, company, debug=False)
+
+    return {
+        "status": "refreshed" if refreshed else "up_to_date",
+        "stored_latest": stored_label,
+        "sec_latest": sec_latest and f"{sec_latest[0]} {sec_latest[1]}",
+    }
