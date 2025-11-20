@@ -159,6 +159,7 @@ def company_financials(
         out.append(
             FinancialAnnualOut(
                 fiscal_year=int(r.fiscal_year),
+                source=getattr(r, "source", None),
 
                 # Income Statement
                 revenue=revenue,

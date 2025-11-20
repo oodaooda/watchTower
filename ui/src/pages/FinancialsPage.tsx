@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 type Row = {
   fiscal_year: number;
   fiscal_period?: string | null; // Q1–Q4 when quarterly
+  source?: string | null;
   revenue?: number | null;
   cost_of_revenue?: number | null;
   gross_profit?: number | null;
@@ -560,6 +561,11 @@ export default function FinancialsPage() {
               </a>
             ) : null;
           })()}
+          {rows.some((r) => r.source && r.source !== "sec") ? (
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-100 dark:border-amber-800">
+              Non-SEC data (external)
+            </span>
+          ) : null}
           <span className="text-xs text-zinc-500">
             {refreshStatus === "checking" && "Checking…"}
             {refreshStatus === "refreshed" && "Refreshed"}

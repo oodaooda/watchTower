@@ -7,7 +7,7 @@ import requests
 import time
 
 from app.core.db import get_db
-from app.core.models import Company, FinancialAnnual, MetricsAnnual, PriceAnnual
+from app.core.models import Company, FinancialAnnual, MetricsAnnual, PriceAnnual, CompanyRiskMetric
 from app.core.schemas import CompanyOut, CompanyProfileOut, ProfileSeries, ProfileSeriesPoint
 from app.routers.valuation import compute_quick_valuation
 from app.core.config import settings
@@ -246,6 +246,22 @@ def get_company_profile(
         shares=_build_series(financial_rows, "shares_outstanding"),
     )
 
+    risk_metric = db.scalars(
+        select(CompanyRiskMetric).where(CompanyRiskMetric.company_id == company.id)
+    ).first()
+    risk_block = None
+    if risk_metric:
+        risk_block = {
+            "alpha": _to_float(getattr(risk_metric, "alpha", None)),
+            "alpha_annual": _to_float(getattr(risk_metric, "alpha_annual", None)),
+            "beta": _to_float(getattr(risk_metric, "beta", None)),
+            "benchmark": risk_metric.benchmark,
+            "risk_free_rate": _to_float(getattr(risk_metric, "risk_free_rate", None)),
+            "lookback_days": getattr(risk_metric, "lookback_days", None),
+            "data_points": getattr(risk_metric, "data_points", None),
+            "computed_at": risk_metric.computed_at.isoformat() if getattr(risk_metric, "computed_at", None) else None,
+        }
+
     return CompanyProfileOut(
         company=CompanyOut.model_validate(company),
         latest_fiscal_year=latest_year,
@@ -259,6 +275,7 @@ def get_company_profile(
         balance_sheet=balance_sheet_block,
         cash_flow=cash_flow_block,
         series=series,
+        risk_metrics=risk_block,
     )
 
 

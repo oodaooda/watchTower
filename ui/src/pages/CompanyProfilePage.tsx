@@ -39,6 +39,17 @@ type ProfileSeries = {
   shares?: SeriesPoint[];
 };
 
+type RiskMetrics = {
+  alpha?: number | null;
+  alpha_annual?: number | null;
+  beta?: number | null;
+  benchmark?: string | null;
+  risk_free_rate?: number | null;
+  lookback_days?: number | null;
+  data_points?: number | null;
+  computed_at?: string | null;
+};
+
 type CompanyProfile = {
   company: CompanySummary;
   latest_fiscal_year?: number | null;
@@ -52,6 +63,7 @@ type CompanyProfile = {
   balance_sheet: MetricMap;
   cash_flow: MetricMap;
   series: ProfileSeries;
+  risk_metrics?: RiskMetrics | null;
 };
 
 type PriceHistoryRange = "1d" | "5d" | "1m" | "ytd" | "5y" | "max";
@@ -377,6 +389,18 @@ export default function CompanyProfilePage() {
     }));
   }, [profile]);
 
+  const riskData = useMemo(() => {
+    const rm = profile?.risk_metrics;
+    if (!rm) return {};
+    return {
+      alpha: rm.alpha ?? null,
+      alpha_annual: rm.alpha_annual ?? null,
+      beta: rm.beta ?? null,
+      risk_free_rate: rm.risk_free_rate ?? null,
+      lookback_days: rm.lookback_days ?? null,
+    };
+  }, [profile]);
+
   function handleSearch(evt: FormEvent<HTMLFormElement>) {
     evt.preventDefault();
     const raw = searchTicker.trim();
@@ -569,6 +593,19 @@ export default function CompanyProfilePage() {
               ]}
               data={profile.quality}
             />
+            {profile.risk_metrics ? (
+              <MetricCard
+                title="Risk Metrics"
+                metrics={[
+                  { key: "beta", label: "Beta", format: "number" },
+                  { key: "alpha_annual", label: "Alpha (Annual)", format: "percent" },
+                  { key: "alpha", label: "Alpha (Daily)", format: "percent" },
+                  { key: "risk_free_rate", label: "Risk-Free Rate", format: "percent" },
+                  { key: "lookback_days", label: "Lookback (days)", format: "number" },
+                ]}
+                data={riskData}
+              />
+            ) : null}
             <MetricCard
               title="Cash Flow Snapshot"
               metrics={[

@@ -41,6 +41,7 @@ class ScreenResultItem(BaseModel):
 # ---------- Financials ----------
 class FinancialAnnualOut(BaseModel):
     fiscal_year: int
+    source: Optional[str] = None
 
     # Income Statement
     revenue: Optional[float] = None
@@ -75,12 +76,14 @@ class FinancialAnnualOut(BaseModel):
     share_based_comp: Optional[float] = None
     dividends_paid: Optional[float] = None
     share_repurchases: Optional[float] = None
+    model_config = ConfigDict(from_attributes=True)
 
 # ---------- financial Quarterly -------
 
 class FinancialQuarterlyOut(BaseModel):
     fiscal_year: int
     fiscal_period: str
+    source: Optional[str] = None
     revenue: Optional[float]
     cost_of_revenue: Optional[float] = None
     gross_profit: Optional[float]
@@ -111,6 +114,8 @@ class FinancialQuarterlyOut(BaseModel):
     inventories: Optional[float]
     accounts_receivable: Optional[float]
     accounts_payable: Optional[float]
+
+    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,6 +153,17 @@ class ProfileSeries(BaseModel):
     shares: List[ProfileSeriesPoint] = Field(default_factory=list)
 
 
+class RiskMetricsOut(BaseModel):
+    alpha: Optional[float] = None
+    alpha_annual: Optional[float] = None
+    beta: Optional[float] = None
+    benchmark: Optional[str] = None
+    risk_free_rate: Optional[float] = None
+    lookback_days: Optional[int] = None
+    data_points: Optional[int] = None
+    computed_at: Optional[str] = None
+
+
 class CompanyProfileOut(BaseModel):
     company: CompanyOut
     latest_fiscal_year: Optional[int] = None
@@ -161,3 +177,18 @@ class CompanyProfileOut(BaseModel):
     balance_sheet: Dict[str, Optional[float]] = Field(default_factory=dict)
     cash_flow: Dict[str, Optional[float]] = Field(default_factory=dict)
     series: ProfileSeries = Field(default_factory=ProfileSeries)
+    risk_metrics: Optional[RiskMetricsOut] = None
+
+
+class FavoriteCompanyItem(BaseModel):
+    company_id: int
+    ticker: str
+    name: Optional[str] = None
+    industry: Optional[str] = None
+    price: Optional[float] = None
+    change_percent: Optional[float] = None
+    pe: Optional[float] = None
+    eps: Optional[float] = None
+    market_cap: Optional[float] = None
+    notes: Optional[str] = None
+    source: Optional[str] = None

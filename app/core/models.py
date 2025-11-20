@@ -31,6 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 from app.core.db import Base
+from datetime import datetime
 
 class Company(Base):
     __tablename__ = "companies"
@@ -237,6 +238,35 @@ class Definition(Base):
     key: Mapped[str] = mapped_column(String, primary_key=True)
     title: Mapped[str] = mapped_column(String)
     body_md: Mapped[str] = mapped_column(String)
+
+
+class FavoriteCompany(Base):
+    __tablename__ = "favorite_companies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), unique=True, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    company = relationship("Company")
+
+
+class CompanyRiskMetric(Base):
+    __tablename__ = "company_risk_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), unique=True, nullable=False)
+    beta: Mapped[float | None] = mapped_column(Numeric(12, 6))
+    alpha: Mapped[float | None] = mapped_column(Numeric(12, 6))
+    alpha_annual: Mapped[float | None] = mapped_column(Numeric(12, 6))
+    benchmark: Mapped[str] = mapped_column(String(32), default="SPY", nullable=False)
+    risk_free_rate: Mapped[float | None] = mapped_column(Numeric(8, 6))
+    lookback_days: Mapped[int | None] = mapped_column(Integer)
+    data_points: Mapped[int | None] = mapped_column(Integer)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), nullable=False)
+
+    company = relationship("Company")
 
 
 class FactProvenance(Base):

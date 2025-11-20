@@ -29,6 +29,7 @@ from app.core.config import settings
 
 from app.core.db import SessionLocal
 from app.core.models import Company, FinancialAnnual
+from app.etl.external_financials import fetch_yahoo_annual_variants
 from app.etl.sec_fetch_companyfacts import (
     fetch_companyfacts,
     extract_annual_usd_facts,
@@ -198,6 +199,96 @@ def merge_by_preference(tag_maps: Dict[str, Dict[int, float]], pref: List[str]) 
     label = "+".join(parts) if parts else "+".join(pref[:1])
     return label, merged
 
+
+def _upsert_annual_rows(db: Session, company: Company, rows: List[Dict]) -> int:
+    """Upsert a list of annual rows (SEC or external)."""
+    rows_written = 0
+    for row in rows:
+        fy = row.get("fiscal_year")
+        if fy is None:
+            continue
+        values = {
+            "company_id": company.id,
+            "fiscal_year": int(fy),
+            "fiscal_period": row.get("fiscal_period") or "FY",
+            "source": row.get("source") or "external",
+
+            # Income Statement
+            "revenue": row.get("revenue"),
+            "cost_of_revenue": row.get("cost_of_revenue"),
+            "gross_profit": row.get("gross_profit"),
+            "research_and_development": row.get("research_and_development"),
+            "selling_general_admin": row.get("selling_general_admin"),
+            "sales_and_marketing": row.get("sales_and_marketing"),
+            "general_and_administrative": row.get("general_and_administrative"),
+            "operating_income": row.get("operating_income"),
+            "interest_expense": row.get("interest_expense"),
+            "other_income_expense": row.get("other_income_expense"),
+            "income_tax_expense": row.get("income_tax_expense"),
+            "net_income": row.get("net_income"),
+
+            # Balance Sheet
+            "assets_total": row.get("assets_total"),
+            "liabilities_current": row.get("liabilities_current"),
+            "liabilities_longterm": row.get("liabilities_longterm"),
+            "equity_total": row.get("equity_total"),
+            "inventories": row.get("inventories"),
+            "accounts_receivable": row.get("accounts_receivable"),
+            "accounts_payable": row.get("accounts_payable"),
+            "cash_and_sti": row.get("cash_and_sti"),
+            "total_debt": row.get("total_debt"),
+            "shares_outstanding": row.get("shares_outstanding"),
+
+            # Cash Flow
+            "cfo": row.get("cfo"),
+            "capex": row.get("capex"),
+            "depreciation_amortization": row.get("depreciation_amortization"),
+            "share_based_comp": row.get("share_based_comp"),
+            "dividends_paid": row.get("dividends_paid"),
+            "share_repurchases": row.get("share_repurchases"),
+        }
+
+        stmt = pg_insert(FinancialAnnual).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[FinancialAnnual.company_id, FinancialAnnual.fiscal_year],
+            set_={
+                "revenue": stmt.excluded.revenue,
+                "net_income": stmt.excluded.net_income,
+                "cash_and_sti": stmt.excluded.cash_and_sti,
+                "total_debt": stmt.excluded.total_debt,
+                "cfo": stmt.excluded.cfo,
+                "capex": stmt.excluded.capex,
+                "shares_outstanding": stmt.excluded.shares_outstanding,
+                "gross_profit": stmt.excluded.gross_profit,
+                "operating_income": stmt.excluded.operating_income,
+                "assets_total": stmt.excluded.assets_total,
+                "equity_total": stmt.excluded.equity_total,
+                "cost_of_revenue": stmt.excluded.cost_of_revenue,
+                "research_and_development": stmt.excluded.research_and_development,
+                "selling_general_admin": stmt.excluded.selling_general_admin,
+                "sales_and_marketing": stmt.excluded.sales_and_marketing,
+                "general_and_administrative": stmt.excluded.general_and_administrative,
+                "interest_expense": stmt.excluded.interest_expense,
+                "other_income_expense": stmt.excluded.other_income_expense,
+                "income_tax_expense": stmt.excluded.income_tax_expense,
+                "liabilities_current": stmt.excluded.liabilities_current,
+                "liabilities_longterm": stmt.excluded.liabilities_longterm,
+                "inventories": stmt.excluded.inventories,
+                "accounts_receivable": stmt.excluded.accounts_receivable,
+                "accounts_payable": stmt.excluded.accounts_payable,
+                "depreciation_amortization": stmt.excluded.depreciation_amortization,
+                "share_based_comp": stmt.excluded.share_based_comp,
+                "dividends_paid": stmt.excluded.dividends_paid,
+                "share_repurchases": stmt.excluded.share_repurchases,
+                "source": stmt.excluded.source,
+            },
+        )
+        db.execute(stmt)
+        rows_written += 1
+
+    db.commit()
+    return rows_written
+
 # ----------------------------
 # Main per-company backfill
 # ----------------------------
@@ -215,7 +306,10 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
     cf = fetch_companyfacts(int(company.cik))
     if not cf:
         if debug:
-            print(f"[watchTower] {company.ticker}: empty companyfacts (404 or fetch issue)")
+            print(f"[watchTower] {company.ticker}: empty companyfacts (404 or fetch issue); trying external fallback")
+        ext_rows = fetch_yahoo_annual_variants(company.ticker, company.exchange)
+        if ext_rows:
+            return _upsert_annual_rows(db, company, ext_rows)
         return 0
 
     if debug:
@@ -320,6 +414,12 @@ def backfill_company(db: Session, company: Company, debug: bool = False) -> int:
         set(shares_map)
     )
     if not years:
+        # Try external fallback if SEC yielded no series
+        ext_rows = fetch_yahoo_annual_variants(company.ticker, company.exchange)
+        if ext_rows:
+            if debug:
+                print(f"[watchTower] {company.ticker}: SEC had no years; wrote external fallback")
+            return _upsert_annual_rows(db, company, ext_rows)
         return 0
 
     # 10) Upsert rows
