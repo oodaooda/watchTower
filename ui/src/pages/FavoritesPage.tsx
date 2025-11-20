@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE } from "../lib/api";
+import { Link } from "react-router-dom";
 
 type Favorite = {
   company_id: number;
@@ -160,7 +161,14 @@ export default function FavoritesPage() {
                   key={item.company_id}
                   className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
                 >
-                  <td className="px-3 py-3 font-semibold">{item.ticker}</td>
+                  <td className="px-3 py-3 font-semibold">
+                    <Link
+                      to={`/companies/${item.ticker}/profile`}
+                      className="text-sky-600 hover:underline"
+                    >
+                      {item.ticker}
+                    </Link>
+                  </td>
                   <td className="px-3 py-3">{item.name || "—"}</td>
                   <td className="px-3 py-3">{item.industry || "—"}</td>
                   <td className="px-3 py-3 text-right">{formatCurrency(item.price)}</td>
