@@ -167,7 +167,8 @@ type MetricFormat =
   | "percent"
   | "ratio"
   | "number"
-  | "score";
+  | "score"
+  | "text";
 
 type MetricSpec = {
   key: string;
@@ -175,20 +176,22 @@ type MetricSpec = {
   format?: MetricFormat;
 };
 
-function formatMetric(value: number | null | undefined, spec: MetricSpec): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+function formatMetric(value: number | string | null | undefined, spec: MetricSpec): string {
+  if (value === null || value === undefined || (typeof value === "number" && Number.isNaN(value))) return "—";
   switch (spec.format) {
     case "currency":
-      return currencyFullFmt.format(value);
+      return currencyFullFmt.format(value as number);
     case "percent":
-      return percentFmt.format(value);
+      return percentFmt.format(value as number);
     case "ratio":
-      return `${numberFmt.format(value)}×`;
+      return `${numberFmt.format(value as number)}×`;
     case "score":
-      return numberFmt.format(value);
+      return numberFmt.format(value as number);
+    case "text":
+      return String(value);
     case "number":
     default:
-      return numberFmt.format(value);
+      return numberFmt.format(value as number);
   }
 }
 
@@ -392,9 +395,19 @@ export default function CompanyProfilePage() {
   const riskData = useMemo(() => {
     const rm = profile?.risk_metrics;
     if (!rm) return {};
+  const alphaSegments: Array<{ label: string; value?: number | null }> = [
+      { label: "3Y", value: rm.alpha_annual },
+      { label: "1Y", value: rm.alpha_annual_1y },
+      { label: "6M", value: rm.alpha_annual_6m },
+      { label: "3M", value: rm.alpha_annual_3m },
+    ];
+    const summary = alphaSegments
+      .filter((seg) => seg.value !== null && seg.value !== undefined)
+      .map((seg) => `${seg.label} ${percentFmt.format(seg.value as number)}`)
+      .join(", ") || null;
     return {
+      alpha_summary: summary,
       alpha: rm.alpha ?? null,
-      alpha_annual: rm.alpha_annual ?? null,
       beta: rm.beta ?? null,
       risk_free_rate: rm.risk_free_rate ?? null,
       lookback_days: rm.lookback_days ?? null,
@@ -597,8 +610,8 @@ export default function CompanyProfilePage() {
               <MetricCard
                 title="Risk Metrics"
                 metrics={[
+                  { key: "alpha_summary", label: "Alpha", format: "text" },
                   { key: "beta", label: "Beta", format: "number" },
-                  { key: "alpha_annual", label: "Alpha (Annual)", format: "percent" },
                   { key: "alpha", label: "Alpha (Daily)", format: "percent" },
                   { key: "risk_free_rate", label: "Risk-Free Rate", format: "percent" },
                   { key: "lookback_days", label: "Lookback (days)", format: "number" },
@@ -619,8 +632,8 @@ export default function CompanyProfilePage() {
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-3">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="lg:col-span-2">
               <MetricCard
                 title="Balance Sheet"
                 metrics={[

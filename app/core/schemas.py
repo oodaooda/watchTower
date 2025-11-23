@@ -156,6 +156,9 @@ class ProfileSeries(BaseModel):
 class RiskMetricsOut(BaseModel):
     alpha: Optional[float] = None
     alpha_annual: Optional[float] = None
+    alpha_annual_1y: Optional[float] = None
+    alpha_annual_6m: Optional[float] = None
+    alpha_annual_3m: Optional[float] = None
     beta: Optional[float] = None
     benchmark: Optional[str] = None
     risk_free_rate: Optional[float] = None

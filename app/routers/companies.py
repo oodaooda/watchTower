@@ -254,6 +254,9 @@ def get_company_profile(
         risk_block = {
             "alpha": _to_float(getattr(risk_metric, "alpha", None)),
             "alpha_annual": _to_float(getattr(risk_metric, "alpha_annual", None)),
+            "alpha_annual_1y": _to_float(getattr(risk_metric, "alpha_annual_1y", None)),
+            "alpha_annual_6m": _to_float(getattr(risk_metric, "alpha_annual_6m", None)),
+            "alpha_annual_3m": _to_float(getattr(risk_metric, "alpha_annual_3m", None)),
             "beta": _to_float(getattr(risk_metric, "beta", None)),
             "benchmark": risk_metric.benchmark,
             "risk_free_rate": _to_float(getattr(risk_metric, "risk_free_rate", None)),

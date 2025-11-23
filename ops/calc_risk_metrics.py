@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import math
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict
 
 import pandas as pd
 
@@ -20,7 +20,13 @@ from app.etl.alpha_fetch_prices import fetch_daily_adjusted
 
 DEFAULT_BENCHMARK = "SPY"
 DEFAULT_LOOKBACK_DAYS = 756  # ~3 years of trading days
+ADDITIONAL_WINDOWS = {
+    "1y": 252,
+    "6m": 126,
+    "3m": 63,
+}
 TRADING_DAYS_PER_YEAR = 252
+MAX_ALPHA_ANNUAL = 10.0  # +/-1000%
 
 
 def compute_alpha_beta(
@@ -40,8 +46,8 @@ def compute_alpha_beta(
     df["ret_stock"] = df["adj_close_stock"].pct_change()
     df["ret_bench"] = df["adj_close_bench"].pct_change()
     df = df.dropna(subset=["ret_stock", "ret_bench"])
-    if df.empty:
-        return None, None, None, 0
+    if df.shape[0] < 10:
+        return None, None, None, df.shape[0]
 
     rf_daily = risk_free_rate / TRADING_DAYS_PER_YEAR
     df["excess_stock"] = df["ret_stock"] - rf_daily
@@ -57,8 +63,23 @@ def compute_alpha_beta(
     mean_x = df["excess_bench"].mean()
     mean_y = df["excess_stock"].mean()
     alpha_daily = mean_y - beta * mean_x
-    alpha_annual = (1 + alpha_daily) ** TRADING_DAYS_PER_YEAR - 1
-    return float(beta), float(alpha_daily), float(alpha_annual), len(df)
+    alpha_annual = _annualize_alpha(alpha_daily)
+    return float(beta), float(alpha_daily), alpha_annual, len(df)
+
+
+def _annualize_alpha(alpha_daily: Optional[float]) -> Optional[float]:
+    if alpha_daily is None or not math.isfinite(alpha_daily):
+        return None
+    base = 1 + alpha_daily
+    if base <= 0:
+        return None
+    try:
+        value = base ** TRADING_DAYS_PER_YEAR - 1
+    except OverflowError:
+        return None
+    if not math.isfinite(value) or abs(value) > MAX_ALPHA_ANNUAL:
+        return None
+    return float(value)
 
 
 def upsert_metric(
@@ -67,6 +88,7 @@ def upsert_metric(
     beta: Optional[float],
     alpha_daily: Optional[float],
     alpha_annual: Optional[float],
+    alpha_windows: Dict[str, Optional[float]],
     benchmark: str,
     risk_free_rate: float,
     lookback_days: int,
@@ -78,6 +100,9 @@ def upsert_metric(
         metric.beta = beta
         metric.alpha = alpha_daily
         metric.alpha_annual = alpha_annual
+        metric.alpha_annual_1y = alpha_windows.get("1y")
+        metric.alpha_annual_6m = alpha_windows.get("6m")
+        metric.alpha_annual_3m = alpha_windows.get("3m")
         metric.benchmark = benchmark
         metric.risk_free_rate = risk_free_rate
         metric.lookback_days = lookback_days
@@ -89,6 +114,9 @@ def upsert_metric(
             beta=beta,
             alpha=alpha_daily,
             alpha_annual=alpha_annual,
+            alpha_annual_1y=alpha_windows.get("1y"),
+            alpha_annual_6m=alpha_windows.get("6m"),
+            alpha_annual_3m=alpha_windows.get("3m"),
             benchmark=benchmark,
             risk_free_rate=risk_free_rate,
             lookback_days=lookback_days,
@@ -105,7 +133,23 @@ def process_company(db, company: Company, benchmark: str, lookback_days: int, ri
     beta, alpha_daily, alpha_annual, data_points = compute_alpha_beta(
         stock_df, bench_df, lookback_days, risk_free_rate
     )
-    upsert_metric(db, company, beta, alpha_daily, alpha_annual, benchmark, risk_free_rate, lookback_days, data_points)
+    alpha_windows: Dict[str, Optional[float]] = {}
+    for label, days in ADDITIONAL_WINDOWS.items():
+        _, _, alpha_ann_win, win_points = compute_alpha_beta(stock_df, bench_df, days, risk_free_rate)
+        min_points = max(30, int(days * 0.4))
+        alpha_windows[label] = alpha_ann_win if alpha_ann_win is not None and win_points >= min_points else None
+    upsert_metric(
+        db,
+        company,
+        beta,
+        alpha_daily,
+        alpha_annual,
+        alpha_windows,
+        benchmark,
+        risk_free_rate,
+        lookback_days,
+        data_points,
+    )
     if not quiet:
         print(
             f"[risk] {company.ticker}: beta={beta if beta is not None else '—'} "
