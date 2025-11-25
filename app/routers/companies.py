@@ -8,7 +8,13 @@ import time
 
 from app.core.db import get_db
 from app.core.models import Company, FinancialAnnual, MetricsAnnual, PriceAnnual, CompanyRiskMetric
-from app.core.schemas import CompanyOut, CompanyProfileOut, ProfileSeries, ProfileSeriesPoint
+from app.core.schemas import (
+    CompanyOut,
+    CompanyProfileOut,
+    ProfileSeries,
+    ProfileSeriesPoint,
+    ValuationHistoryPoint,
+)
 from app.routers.valuation import compute_quick_valuation
 from app.core.config import settings
 
@@ -89,12 +95,12 @@ def get_company_profile(
         .order_by(PriceAnnual.fiscal_year.asc())
     ).all()
 
-    latest_metrics = db.scalars(
+    metrics_rows = db.scalars(
         select(MetricsAnnual)
         .where(MetricsAnnual.company_id == company.id)
-        .order_by(MetricsAnnual.fiscal_year.desc())
-        .limit(1)
-    ).first()
+        .order_by(MetricsAnnual.fiscal_year.asc())
+    ).all()
+    latest_metrics = metrics_rows[-1] if metrics_rows else None
 
     latest_financial = financial_rows[-1] if financial_rows else None
     latest_price = price_rows[-1] if price_rows else None
@@ -264,6 +270,7 @@ def get_company_profile(
             "data_points": getattr(risk_metric, "data_points", None),
             "computed_at": risk_metric.computed_at.isoformat() if getattr(risk_metric, "computed_at", None) else None,
         }
+    valuation_history = _build_pe_history(financial_rows, price_rows, metrics_rows)
 
     return CompanyProfileOut(
         company=CompanyOut.model_validate(company),
@@ -279,6 +286,7 @@ def get_company_profile(
         cash_flow=cash_flow_block,
         series=series,
         risk_metrics=risk_block,
+        valuation_history=valuation_history,
     )
 
 
@@ -472,3 +480,56 @@ def _build_series(rows: List[object], attr: str) -> List[ProfileSeriesPoint]:
         val = _to_float(getattr(row, attr, None))
         out.append(ProfileSeriesPoint(fiscal_year=int(fiscal_year), value=val))
     return out
+
+
+def _build_pe_history(
+    financial_rows: List[FinancialAnnual],
+    price_rows: List[PriceAnnual],
+    metrics_rows: List[MetricsAnnual],
+    limit: int = 15,
+) -> List[ValuationHistoryPoint]:
+    price_map: Dict[int, Optional[float]] = {}
+    for row in price_rows:
+        if row.fiscal_year is None:
+            continue
+        price_map[int(row.fiscal_year)] = _to_float(getattr(row, "close_price", None))
+
+    pe_map: Dict[int, Optional[float]] = {}
+    for m in metrics_rows or []:
+        if m.fiscal_year is None:
+            continue
+        pe_map[int(m.fiscal_year)] = _to_float(getattr(m, "pe_ttm", None))
+
+    if not financial_rows:
+        return []
+
+    history: List[ValuationHistoryPoint] = []
+    sorted_rows = sorted(
+        (r for r in financial_rows if r.fiscal_year is not None),
+        key=lambda r: r.fiscal_year,
+    )[-limit:]
+
+    for row in sorted_rows:
+        fy = int(row.fiscal_year)
+        price = price_map.get(fy)
+        revenue = _to_float(getattr(row, "revenue", None))
+        net_income = _to_float(getattr(row, "net_income", None))
+        shares = _to_float(getattr(row, "shares_outstanding", None))
+        eps = _ratio(net_income, shares) if net_income is not None and shares not in (None, 0) else None
+        pe = _ratio(price, eps) if price is not None and eps not in (None, 0) else pe_map.get(fy)
+        if pe is None and eps not in (None, 0) and pe_map.get(fy) is not None:
+            pe = pe_map[fy]
+        if price is None and pe is not None and eps not in (None, 0):
+            price = eps * pe
+
+        history.append(
+            ValuationHistoryPoint(
+                fiscal_year=fy,
+                price=price,
+                eps=eps,
+                pe=pe,
+                revenue=revenue,
+                net_income=net_income,
+            )
+        )
+    return history

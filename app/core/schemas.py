@@ -167,6 +167,15 @@ class RiskMetricsOut(BaseModel):
     computed_at: Optional[str] = None
 
 
+class ValuationHistoryPoint(BaseModel):
+    fiscal_year: int
+    price: Optional[float] = None
+    eps: Optional[float] = None
+    pe: Optional[float] = None
+    revenue: Optional[float] = None
+    net_income: Optional[float] = None
+
+
 class CompanyProfileOut(BaseModel):
     company: CompanyOut
     latest_fiscal_year: Optional[int] = None
@@ -181,6 +190,7 @@ class CompanyProfileOut(BaseModel):
     cash_flow: Dict[str, Optional[float]] = Field(default_factory=dict)
     series: ProfileSeries = Field(default_factory=ProfileSeries)
     risk_metrics: Optional[RiskMetricsOut] = None
+    valuation_history: List[ValuationHistoryPoint] = Field(default_factory=list)
 
 
 class FavoriteCompanyItem(BaseModel):

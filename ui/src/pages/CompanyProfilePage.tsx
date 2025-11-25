@@ -16,6 +16,7 @@ import {
   BarChart,
   Bar,
   TooltipProps,
+  ComposedChart,
 } from "recharts";
 
 type SeriesPoint = { fiscal_year: number; value: number | null };
@@ -64,6 +65,16 @@ type CompanyProfile = {
   cash_flow: MetricMap;
   series: ProfileSeries;
   risk_metrics?: RiskMetrics | null;
+  valuation_history?: ValuationHistoryPoint[];
+};
+
+type ValuationHistoryPoint = {
+  fiscal_year: number;
+  price?: number | null;
+  eps?: number | null;
+  pe?: number | null;
+  revenue?: number | null;
+  net_income?: number | null;
 };
 
 type PriceHistoryRange = "1d" | "5d" | "1m" | "ytd" | "5y" | "max";
@@ -128,6 +139,11 @@ const percentFmt = new Intl.NumberFormat(undefined, {
 });
 
 const numberFmt = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+});
+
+const compactNumberFmt = new Intl.NumberFormat(undefined, {
+  notation: "compact",
   maximumFractionDigits: 2,
 });
 
@@ -198,6 +214,11 @@ function formatMetric(value: number | string | null | undefined, spec: MetricSpe
 function formatCompactCurrency(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return currencyCompactFmt.format(value);
+}
+
+function formatCurrencyValue(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return currencyFullFmt.format(value);
 }
 
 function titleCaseTicker(company: CompanySummary | null): string {
@@ -413,6 +434,18 @@ export default function CompanyProfilePage() {
       lookback_days: rm.lookback_days ?? null,
     };
   }, [profile]);
+
+  const valuationHistory = profile?.valuation_history ?? [];
+  const valuationChartData = useMemo(() => {
+    return (valuationHistory || []).map((pt) => ({
+      label: String(pt.fiscal_year),
+      pe: pt.pe ?? null,
+      revenue: pt.revenue ?? null,
+      netIncome: pt.net_income ?? null,
+      price: pt.price ?? null,
+      eps: pt.eps ?? null,
+    }));
+  }, [valuationHistory]);
 
   function handleSearch(evt: FormEvent<HTMLFormElement>) {
     evt.preventDefault();
@@ -740,6 +773,105 @@ export default function CompanyProfilePage() {
               </ResponsiveContainer>
             </ChartCard>
           </div>
+
+          {valuationChartData.length > 0 ? (
+            <div className="grid gap-4">
+              <ChartCard
+                title="Valuation History (P/E vs Revenue & Net Income)"
+                hasData={valuationChartData.length > 0}
+                compact
+              >
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart
+                    data={valuationChartData}
+                    margin={{ top: 16, right: 16, left: 0, bottom: 32 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-800" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => numberFmt.format(v as number)}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => compactNumberFmt.format(v as number)}
+                    />
+                    <Tooltip
+                      formatter={(value, name) =>
+                        name === "P/E"
+                          ? numberFmt.format(value as number)
+                          : compactNumberFmt.format(value as number)
+                      }
+                      labelFormatter={(label) => `FY ${label}`}
+                    />
+                    <Legend verticalAlign="top" wrapperStyle={{ top: -8 }} />
+                    <Bar
+                      yAxisId="right"
+                      dataKey="revenue"
+                      name="Revenue"
+                      fill="#60a5fa"
+                      opacity={0.65}
+                    />
+                    <Bar
+                      yAxisId="right"
+                      dataKey="netIncome"
+                      name="Net Income"
+                      fill="#34d399"
+                      opacity={0.65}
+                    />
+                    <Line
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="pe"
+                      name="P/E"
+                      stroke="#f87171"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">FY</th>
+                      <th className="px-3 py-2 text-right">Price</th>
+                      <th className="px-3 py-2 text-right">EPS</th>
+                      <th className="px-3 py-2 text-right">P/E</th>
+                      <th className="px-3 py-2 text-right">Revenue</th>
+                      <th className="px-3 py-2 text-right">Net Income</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {valuationHistory.map((row) => (
+                      <tr
+                        key={row.fiscal_year}
+                        className="border-t border-zinc-200 dark:border-zinc-800"
+                      >
+                        <td className="px-3 py-2 font-semibold">{row.fiscal_year}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrencyValue(row.price)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrencyValue(row.eps)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {row.pe !== null && row.pe !== undefined ? numberFmt.format(row.pe) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {row.revenue ? compactNumberFmt.format(row.revenue) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {row.net_income ? compactNumberFmt.format(row.net_income) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid gap-4">
             <NewsCard items={newsItems} loading={newsLoading} error={newsError} />
