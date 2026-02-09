@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     alpha_vantage_api_key: str | None = None
     sec_user_agent: str
     pharma_openai_api_key: str | None = Field(default=None, alias="PHARMA_OPENAI_API_KEY")
+    modeling_openai_api_key: str | None = Field(default=None, alias="MODELING_OPENAI_API_KEY")
 
     class Config:
         env_file = ".env"            # <- load from repo root
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
 
     # CORS (comma-separated list; '*' allows all - dev only)
     cors_origins: str = Field("*", alias="CORS_ORIGINS")
+    log_level: str = Field("INFO", alias="LOG_LEVEL")
 
     # Universe toggles
     include_banks: bool = Field(False, alias="INCLUDE_BANKS")

@@ -7,8 +7,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: watchtower
-    ports:
-      - "5432:5432"
+    # Postgres not exposed to host
+    # ports: []
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -17,13 +17,18 @@ services:
       context: ..
       dockerfile: docker/api.Dockerfile
     env_file: ../.env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       - db
     ports:
       - "8000:8000"
+    volumes:
+      - ..:/app
     command: >
       sh -c "python -m ops.create_tables && \
-             uvicorn app.api.main:app --host 0.0.0.0 --port 8000"
+             uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload"
 
 volumes:
   db_data:

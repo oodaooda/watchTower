@@ -174,6 +174,7 @@ class ValuationHistoryPoint(BaseModel):
     pe: Optional[float] = None
     revenue: Optional[float] = None
     net_income: Optional[float] = None
+    valuation_basis: Optional[str] = None
 
 
 class CompanyProfileOut(BaseModel):
@@ -205,3 +206,145 @@ class FavoriteCompanyItem(BaseModel):
     market_cap: Optional[float] = None
     notes: Optional[str] = None
     source: Optional[str] = None
+
+
+# ---------- Modeling ----------
+class ModelingAssumptionOut(BaseModel):
+    scenario: str
+    revenue_cagr_start: Optional[float] = None
+    revenue_cagr_floor: Optional[float] = None
+    revenue_decay_quarters: Optional[int] = None
+    gross_margin_target: Optional[float] = None
+    gross_margin_glide_quarters: Optional[int] = None
+    rnd_pct: Optional[float] = None
+    sm_pct: Optional[float] = None
+    ga_pct: Optional[float] = None
+    tax_rate: Optional[float] = None
+    interest_pct_revenue: Optional[float] = None
+    dilution_pct_annual: Optional[float] = None
+    seasonality_mode: Optional[str] = None
+    driver_blend_start_weight: Optional[float] = None
+    driver_blend_end_weight: Optional[float] = None
+    driver_blend_ramp_quarters: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ModelingAssumptionIn(BaseModel):
+    scenario: str
+    revenue_cagr_start: Optional[float] = None
+    revenue_cagr_floor: Optional[float] = None
+    revenue_decay_quarters: Optional[int] = None
+    gross_margin_target: Optional[float] = None
+    gross_margin_glide_quarters: Optional[int] = None
+    rnd_pct: Optional[float] = None
+    sm_pct: Optional[float] = None
+    ga_pct: Optional[float] = None
+    tax_rate: Optional[float] = None
+    interest_pct_revenue: Optional[float] = None
+    dilution_pct_annual: Optional[float] = None
+    seasonality_mode: Optional[str] = None
+    driver_blend_start_weight: Optional[float] = None
+    driver_blend_end_weight: Optional[float] = None
+    driver_blend_ramp_quarters: Optional[int] = None
+
+
+class ModelingKPIOut(BaseModel):
+    fiscal_year: int
+    fiscal_period: str
+    mau: Optional[float] = None
+    dau: Optional[float] = None
+    paid_subs: Optional[float] = None
+    paid_conversion_pct: Optional[float] = None
+    arpu: Optional[float] = None
+    churn_pct: Optional[float] = None
+    source: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ModelingKPIIn(BaseModel):
+    fiscal_year: int
+    fiscal_period: str
+    mau: Optional[float] = None
+    dau: Optional[float] = None
+    paid_subs: Optional[float] = None
+    paid_conversion_pct: Optional[float] = None
+    arpu: Optional[float] = None
+    churn_pct: Optional[float] = None
+    source: Optional[str] = "manual"
+
+
+class ModelingRunRequest(BaseModel):
+    assumptions: List[ModelingAssumptionIn]
+    kpis: List[ModelingKPIIn] = Field(default_factory=list)
+    horizon_quarters: int = 40
+
+
+class ModelingQuarterOut(BaseModel):
+    fiscal_year: int
+    fiscal_period: str
+    revenue: Optional[float] = None
+    cost_of_revenue: Optional[float] = None
+    gross_profit: Optional[float] = None
+    research_and_development: Optional[float] = None
+    sales_and_marketing: Optional[float] = None
+    general_and_administrative: Optional[float] = None
+    operating_expenses: Optional[float] = None
+    operating_income: Optional[float] = None
+    interest_expense: Optional[float] = None
+    pretax_income: Optional[float] = None
+    income_tax_expense: Optional[float] = None
+    net_income: Optional[float] = None
+    shares_outstanding: Optional[float] = None
+    eps: Optional[float] = None
+    revenue_yoy_pct: Optional[float] = None
+    gross_margin_pct: Optional[float] = None
+    operating_margin_pct: Optional[float] = None
+    net_margin_pct: Optional[float] = None
+    driver_revenue: Optional[float] = None
+    baseline_revenue: Optional[float] = None
+    blend_weight: Optional[float] = None
+
+
+class ModelingAnnualOut(BaseModel):
+    fiscal_year: int
+    revenue: Optional[float] = None
+    cost_of_revenue: Optional[float] = None
+    gross_profit: Optional[float] = None
+    research_and_development: Optional[float] = None
+    sales_and_marketing: Optional[float] = None
+    general_and_administrative: Optional[float] = None
+    operating_expenses: Optional[float] = None
+    operating_income: Optional[float] = None
+    interest_expense: Optional[float] = None
+    pretax_income: Optional[float] = None
+    income_tax_expense: Optional[float] = None
+    net_income: Optional[float] = None
+    shares_outstanding: Optional[float] = None
+    eps: Optional[float] = None
+    revenue_yoy_pct: Optional[float] = None
+    gross_margin_pct: Optional[float] = None
+    operating_margin_pct: Optional[float] = None
+    net_margin_pct: Optional[float] = None
+
+
+class ModelingScenarioOut(BaseModel):
+    name: str
+    assumptions: ModelingAssumptionOut
+    quarterly: List[ModelingQuarterOut]
+    annual: List[ModelingAnnualOut]
+
+
+class ModelingRunResponse(BaseModel):
+    scenarios: List[ModelingScenarioOut]
+
+
+class ModelingChatRequest(BaseModel):
+    message: str
+    assumptions: List[ModelingAssumptionIn]
+    kpis: List[ModelingKPIIn] = Field(default_factory=list)
+    history: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class ModelingChatResponse(BaseModel):
+    reply: str
+    proposed_edits: List[Dict[str, Optional[str]]] = Field(default_factory=list)

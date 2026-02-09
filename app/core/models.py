@@ -240,6 +240,68 @@ class Definition(Base):
     body_md: Mapped[str] = mapped_column(String)
 
 
+class ModelingAssumption(Base):
+    __tablename__ = "modeling_assumptions"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    scenario = Column(String, nullable=False)
+
+    revenue_cagr_start = Column(Numeric(8, 4))
+    revenue_cagr_floor = Column(Numeric(8, 4))
+    revenue_decay_quarters = Column(Integer)
+
+    gross_margin_target = Column(Numeric(8, 4))
+    gross_margin_glide_quarters = Column(Integer)
+
+    rnd_pct = Column(Numeric(8, 4))
+    sm_pct = Column(Numeric(8, 4))
+    ga_pct = Column(Numeric(8, 4))
+
+    tax_rate = Column(Numeric(8, 4))
+    interest_pct_revenue = Column(Numeric(8, 4))
+    dilution_pct_annual = Column(Numeric(8, 4))
+
+    seasonality_mode = Column(String, default="auto")
+    driver_blend_start_weight = Column(Numeric(8, 4))
+    driver_blend_end_weight = Column(Numeric(8, 4))
+    driver_blend_ramp_quarters = Column(Integer)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "scenario", name="uq_modeling_assumptions_company_scenario"),
+        Index("ix_modeling_assumptions_company", "company_id"),
+    )
+
+
+class ModelingKPI(Base):
+    __tablename__ = "modeling_kpis"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    fiscal_year = Column(Integer, nullable=False, index=True)
+    fiscal_period = Column(String, nullable=False)
+
+    mau = Column(Numeric(20, 4))
+    dau = Column(Numeric(20, 4))
+    paid_subs = Column(Numeric(20, 4))
+    paid_conversion_pct = Column(Numeric(8, 4))
+    arpu = Column(Numeric(20, 4))
+    churn_pct = Column(Numeric(8, 4))
+
+    source = Column(String, default="manual")
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "fiscal_year", "fiscal_period", name="uq_modeling_kpis_company_year_period"),
+        Index("ix_modeling_kpis_company_year_period", "company_id", "fiscal_year", "fiscal_period"),
+    )
+
+
 class FavoriteCompany(Base):
     __tablename__ = "favorite_companies"
 

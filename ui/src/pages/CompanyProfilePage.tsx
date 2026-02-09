@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import BackButton from "../components/BackButton";
 import type { ReactNode } from "react";
 import { CompanyNewsItem, fetchCompanyNews } from "../lib/api";
 import {
@@ -455,12 +456,10 @@ export default function CompanyProfilePage() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 md:px-6 lg:px-8 py-4 space-y-4">
+    <div className="mt-6 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2">
-          <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
-            ← Back to Screener
-          </button>
+          <BackButton />
           {profile?.company?.id ? (
             <>
               <button
@@ -468,6 +467,12 @@ export default function CompanyProfilePage() {
                 onClick={() => navigate(`/financials/${profile.company.id}`)}
               >
                 ← Financials
+              </button>
+              <button
+                className={btnGhost}
+                onClick={() => navigate(`/companies/${profile.company.id}/modeling`)}
+              >
+                Modeling →
               </button>
               <button
                 className={btnGhost}
@@ -780,6 +785,14 @@ export default function CompanyProfilePage() {
                 title="Valuation History (P/E vs Revenue & Net Income)"
                 hasData={valuationChartData.length > 0}
                 compact
+                headerRight={
+                  <span
+                    className="text-xs text-zinc-400 cursor-help"
+                    title="Historical P/E uses fiscal-year close price divided by EPS. The current year uses live price with TTM EPS when available; otherwise it falls back to the prior FY EPS."
+                  >
+                    i
+                  </span>
+                }
               >
                 <ResponsiveContainer width="100%" height={300}>
                   <ComposedChart
@@ -845,6 +858,7 @@ export default function CompanyProfilePage() {
                       <th className="px-3 py-2 text-right">P/E</th>
                       <th className="px-3 py-2 text-right">Revenue</th>
                       <th className="px-3 py-2 text-right">Net Income</th>
+                      <th className="px-3 py-2 text-right">Basis</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -864,6 +878,9 @@ export default function CompanyProfilePage() {
                         </td>
                         <td className="px-3 py-2 text-right">
                           {row.net_income ? compactNumberFmt.format(row.net_income) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs text-zinc-500">
+                          {row.valuation_basis || "FY"}
                         </td>
                       </tr>
                     ))}

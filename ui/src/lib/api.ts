@@ -115,6 +115,179 @@ export async function fetchCompanyNews(identifier: string, limit = 12): Promise<
   return data?.items ?? [];
 }
 
+// -------- Modeling --------
+
+export type ModelingAssumption = {
+  scenario: string;
+  revenue_cagr_start?: number | null;
+  revenue_cagr_floor?: number | null;
+  revenue_decay_quarters?: number | null;
+  gross_margin_target?: number | null;
+  gross_margin_glide_quarters?: number | null;
+  rnd_pct?: number | null;
+  sm_pct?: number | null;
+  ga_pct?: number | null;
+  tax_rate?: number | null;
+  interest_pct_revenue?: number | null;
+  dilution_pct_annual?: number | null;
+  seasonality_mode?: string | null;
+  driver_blend_start_weight?: number | null;
+  driver_blend_end_weight?: number | null;
+  driver_blend_ramp_quarters?: number | null;
+};
+
+export type ModelingKPI = {
+  fiscal_year: number;
+  fiscal_period: string;
+  mau?: number | null;
+  dau?: number | null;
+  paid_subs?: number | null;
+  paid_conversion_pct?: number | null;
+  arpu?: number | null;
+  churn_pct?: number | null;
+  source?: string | null;
+};
+
+export type ModelingQuarter = {
+  fiscal_year: number;
+  fiscal_period: string;
+  revenue?: number | null;
+  cost_of_revenue?: number | null;
+  gross_profit?: number | null;
+  research_and_development?: number | null;
+  sales_and_marketing?: number | null;
+  general_and_administrative?: number | null;
+  operating_expenses?: number | null;
+  operating_income?: number | null;
+  interest_expense?: number | null;
+  pretax_income?: number | null;
+  income_tax_expense?: number | null;
+  net_income?: number | null;
+  shares_outstanding?: number | null;
+  eps?: number | null;
+  revenue_yoy_pct?: number | null;
+  gross_margin_pct?: number | null;
+  operating_margin_pct?: number | null;
+  net_margin_pct?: number | null;
+  driver_revenue?: number | null;
+  baseline_revenue?: number | null;
+  blend_weight?: number | null;
+};
+
+export type ModelingAnnual = {
+  fiscal_year: number;
+  revenue?: number | null;
+  cost_of_revenue?: number | null;
+  gross_profit?: number | null;
+  research_and_development?: number | null;
+  sales_and_marketing?: number | null;
+  general_and_administrative?: number | null;
+  operating_expenses?: number | null;
+  operating_income?: number | null;
+  interest_expense?: number | null;
+  pretax_income?: number | null;
+  income_tax_expense?: number | null;
+  net_income?: number | null;
+  shares_outstanding?: number | null;
+  eps?: number | null;
+  revenue_yoy_pct?: number | null;
+  gross_margin_pct?: number | null;
+  operating_margin_pct?: number | null;
+  net_margin_pct?: number | null;
+};
+
+export type ModelingScenario = {
+  name: string;
+  assumptions: ModelingAssumption;
+  quarterly: ModelingQuarter[];
+  annual: ModelingAnnual[];
+};
+
+export type ModelingRunResponse = {
+  scenarios: ModelingScenario[];
+};
+
+export type ModelingCompany = {
+  id: number;
+  ticker: string;
+  name?: string | null;
+  industry_name?: string | null;
+  description?: string | null;
+};
+
+export type ModelingDataResponse = {
+  company: ModelingCompany;
+  fiscal_year_end_month?: number | null;
+  assumptions: ModelingAssumption[];
+  kpis: ModelingKPI[];
+  financials_quarterly: Array<{
+    fiscal_year: number;
+    fiscal_period: string;
+    revenue?: number | null;
+    gross_profit?: number | null;
+    operating_income?: number | null;
+    net_income?: number | null;
+    shares_outstanding?: number | null;
+  }>;
+};
+
+export async function fetchModelingData(companyId: string): Promise<ModelingDataResponse> {
+  const res = await fetch(`${API_BASE}/modeling/${companyId}`);
+  if (!res.ok) throw new Error(`modeling ${res.status}`);
+  return res.json();
+}
+
+export async function saveModelingAssumptions(companyId: string, assumptions: ModelingAssumption[]) {
+  const res = await fetch(`${API_BASE}/modeling/${companyId}/assumptions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(assumptions),
+  });
+  if (!res.ok) throw new Error(`modeling/assumptions ${res.status}`);
+  return res.json();
+}
+
+export async function saveModelingKpis(companyId: string, kpis: ModelingKPI[]) {
+  const res = await fetch(`${API_BASE}/modeling/${companyId}/kpis`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(kpis),
+  });
+  if (!res.ok) throw new Error(`modeling/kpis ${res.status}`);
+  return res.json();
+}
+
+export async function runModeling(companyId: string, assumptions: ModelingAssumption[], kpis: ModelingKPI[]) {
+  const res = await fetch(`${API_BASE}/modeling/${companyId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assumptions, kpis, horizon_quarters: 40 }),
+  });
+  if (!res.ok) throw new Error(`modeling/run ${res.status}`);
+  return res.json() as Promise<ModelingRunResponse>;
+}
+
+export type ModelingChatResponse = {
+  reply: string;
+  proposed_edits: Array<{ path?: string; old?: string; new?: string; reason?: string }>;
+};
+
+export async function chatModeling(
+  companyId: string,
+  message: string,
+  assumptions: ModelingAssumption[],
+  kpis: ModelingKPI[],
+  history: Array<{ role: string; content: string }>
+) {
+  const res = await fetch(`${API_BASE}/modeling/${companyId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, assumptions, kpis, history }),
+  });
+  if (!res.ok) throw new Error(`modeling/chat ${res.status}`);
+  return res.json() as Promise<ModelingChatResponse>;
+}
+
 // -------- Pharma endpoints --------
 
 export type PharmaCompanyListItem = {

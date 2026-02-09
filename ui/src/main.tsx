@@ -7,6 +7,8 @@ import Screener from "./pages/Screener";
 import CompaniesPage from "./pages/Companies";
 import FinancialsPage from "./pages/FinancialsPage";
 import CompanyProfilePage from "./pages/CompanyProfilePage";
+import ModelingPage from "./pages/ModelingPage";
+import FinanceUniversityPage from "./pages/FinanceUniversityPage";
 import PharmaDashboardPage from "./pages/PharmaDashboardPage";
 import PharmaCompanyPage from "./pages/PharmaCompanyPage";
 import UniverseSyncPage from "./pages/UniverseSyncPage";
@@ -26,11 +28,13 @@ createRoot(document.getElementById("root")!).render(
           {/* Other pages (relative paths, no leading slash) */}
           <Route path="companies" element={<CompaniesPage />} />
           <Route path="companies/:identifier/profile" element={<CompanyProfilePage />} />
+          <Route path="companies/:companyId/modeling" element={<ModelingPage />} />
           <Route path="financials/:companyId" element={<FinancialsPage />} />
           <Route path="pharma" element={<PharmaDashboardPage />} />
           <Route path="pharma/:identifier" element={<PharmaCompanyPage />} />
           <Route path="universe" element={<UniverseSyncPage />} />
           <Route path="favorites" element={<FavoritesPage />} />
+          <Route path="finance-university" element={<FinanceUniversityPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
