@@ -39,7 +39,7 @@ This checklist is broken into phases. Each phase includes verification steps and
 - [x] Manual UI: Data Assistant chat returns valid response
 
 **Commit Point**
-- [ ] Commit after Phase 2 tests pass.
+- [x] Commit after Phase 2 tests pass.
 
 ---
 
