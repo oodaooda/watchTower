@@ -288,6 +288,24 @@ export async function chatModeling(
   return res.json() as Promise<ModelingChatResponse>;
 }
 
+// -------- Data Assistant (QA) --------
+
+export type QAResponse = {
+  answer: string;
+  citations: string[];
+  data?: Record<string, unknown>;
+};
+
+export async function askDataAssistant(question: string): Promise<QAResponse> {
+  const res = await fetch(`${API_BASE}/qa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) throw new Error(`qa ${res.status}`);
+  return res.json();
+}
+
 // -------- Pharma endpoints --------
 
 export type PharmaCompanyListItem = {

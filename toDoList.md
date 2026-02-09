@@ -15,28 +15,28 @@ This checklist is broken into phases. Each phase includes verification steps and
 - [ ] Add CI guidance (GitHub Actions)
 
 **Phase 1 Tests**
-- [ ] `pytest` (unit tests)
-- [ ] Manual: `GET /health` and `GET /api/v1/health`
-- [ ] Manual: `POST /modeling/{id}/run` returns scenarios
+- [x] `pytest` (unit tests)
+- [x] Manual: `GET /health` and `GET /api/v1/health`
+- [x] Manual: `POST /modeling/{id}/run` returns scenarios
 
 **Commit Point**
-- [ ] Commit after Phase 1 tests pass.
+- [x] Commit after Phase 1 tests pass.
 
 ---
 
 ## Phase 2 — LLM Features for User Queries
 
-- [ ] Design `/qa` endpoint schema (question → answer + citations)
-- [ ] Implement safe query tool (whitelisted fields, read‑only)
-- [ ] Add LLM guardrails (schema validation, fallback response)
-- [ ] Add structured audit logging for LLM requests/responses
-- [ ] Add UI “Data Assistant” chat tab
-- [ ] Update docs (`ENGINEERING_STANDARDS.md`, `OPERATIONS_GUIDE.md`)
+- [x] Design `/qa` endpoint schema (question → answer + citations)
+- [x] Implement safe query tool (whitelisted fields, read‑only)
+- [x] Add LLM guardrails (schema validation, fallback response)
+- [x] Add structured audit logging for LLM requests/responses
+- [x] Add UI “Data Assistant” chat tab
+- [x] Update docs (`ENGINEERING_STANDARDS.md`, `OPERATIONS_GUIDE.md`)
 
 **Phase 2 Tests**
-- [ ] Unit: query tool validation
-- [ ] Integration: `/qa` returns answer for known company
-- [ ] Manual UI: Data Assistant chat returns valid response
+- [x] Unit: query tool validation
+- [x] Integration: `/qa` returns answer for known company
+- [x] Manual UI: Data Assistant chat returns valid response
 
 **Commit Point**
 - [ ] Commit after Phase 2 tests pass.

@@ -348,3 +348,14 @@ class ModelingChatRequest(BaseModel):
 class ModelingChatResponse(BaseModel):
     reply: str
     proposed_edits: List[Dict[str, Optional[str]]] = Field(default_factory=list)
+
+
+# ---------- QA (Data Assistant) ----------
+class QARequest(BaseModel):
+    question: str
+
+
+class QAResponse(BaseModel):
+    answer: str
+    citations: List[str] = Field(default_factory=list)
+    data: Dict[str, Optional[str | float | int | List[Dict[str, Optional[str | float | int]]]]] = Field(default_factory=dict)

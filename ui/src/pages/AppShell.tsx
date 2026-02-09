@@ -33,6 +33,12 @@ export default function AppShell() {
           >
             Finance University
           </Link>
+          <Link
+            to="/data-assistant"
+            className="rounded-xl border border-zinc-700 px-3 py-1.5 hover:bg-zinc-900/40"
+          >
+            Data Assistant
+          </Link>
           <ThemeToggle />
         </div>
 

@@ -68,6 +68,13 @@ Ensure:
 
 Use the compose DB (`docker_db_1`) as the canonical development database. Avoid mixing it with separate host‑run Postgres containers.
 
+## Data Assistant (QA)
+
+Test the QA endpoint:
+```
+curl -X POST http://localhost:8000/qa -H 'Content-Type: application/json' -d '{"question":"What is the P/E of AAPL?"}'
+```
+
 ## Testing
 
 ```
@@ -75,3 +82,12 @@ pytest
 ```
 
 Core unit tests live in `tests/unit`.
+
+## Git LFS (Large Files)
+
+Large assets (e.g., `watchtower.sql`) are tracked via Git LFS. After cloning:
+
+```
+git lfs install
+git lfs pull
+```
