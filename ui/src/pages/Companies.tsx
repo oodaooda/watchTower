@@ -1,5 +1,6 @@
 // ui/src/pages/Companies.tsx
 import { useEffect, useMemo, useState } from "react";
+import BackButton from "../components/BackButton";
 
 type CompanyItem = {
   id: number;
@@ -77,8 +78,11 @@ export default function CompaniesPage() {
     `https://www.sec.gov/edgar/search/#/category=company&entityName=${encodeURIComponent(t)}`;
 
   return (
-    <div className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4">
-      <h1 className="text-2xl font-semibold">Companies</h1>
+    <div className="mt-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <BackButton />
+        <h1 className="text-2xl font-semibold">Companies</h1>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <input

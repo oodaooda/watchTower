@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import BackButton from "../components/BackButton";
 
 type Row = {
   fiscal_year: number;
@@ -492,14 +493,12 @@ export default function FinancialsPage() {
   return (
     <div
       ref={outerRef}
-      className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4 space-y-3"
+      className="mt-6 space-y-3"
     >
       {/* Back to Screener */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <button className={btn} onClick={() => navigate("/")} aria-label="Back to Screener">
-              ← Back to Screener
-            </button>
+            <BackButton />
             <form
               className="flex items-center gap-2"
               onSubmit={(e) => {

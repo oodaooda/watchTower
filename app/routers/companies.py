@@ -270,7 +270,14 @@ def get_company_profile(
             "data_points": getattr(risk_metric, "data_points", None),
             "computed_at": risk_metric.computed_at.isoformat() if getattr(risk_metric, "computed_at", None) else None,
         }
-    valuation_history = _build_pe_history(financial_rows, price_rows, metrics_rows)
+    valuation_history = _build_pe_history(
+        financial_rows,
+        price_rows,
+        metrics_rows,
+        latest_financial,
+        latest_metrics,
+        price,
+    )
 
     return CompanyProfileOut(
         company=CompanyOut.model_validate(company),
@@ -486,6 +493,9 @@ def _build_pe_history(
     financial_rows: List[FinancialAnnual],
     price_rows: List[PriceAnnual],
     metrics_rows: List[MetricsAnnual],
+    latest_financial: Optional[FinancialAnnual],
+    latest_metrics: Optional[MetricsAnnual],
+    live_price: Optional[float],
     limit: int = 15,
 ) -> List[ValuationHistoryPoint]:
     price_map: Dict[int, Optional[float]] = {}
@@ -530,6 +540,36 @@ def _build_pe_history(
                 pe=pe,
                 revenue=revenue,
                 net_income=net_income,
+                valuation_basis="FY" if pe is not None else None,
             )
         )
-    return history
+    history.sort(key=lambda r: r.fiscal_year)
+    history_map = {row.fiscal_year: row for row in history}
+
+    current_year = int(getattr(latest_financial, "fiscal_year", 0) or 0)
+    if current_year and latest_financial:
+        row = history_map.get(current_year)
+        if not row:
+            row = ValuationHistoryPoint(fiscal_year=current_year)
+            history.append(row)
+            history_map[current_year] = row
+
+        eps_ttm = _to_float(getattr(latest_metrics, "ttm_eps", None)) if latest_metrics else None
+        eps_fallback = row.eps
+        if eps_fallback is None:
+            eps_fallback = _ratio(
+                _to_float(getattr(latest_financial, "net_income", None)),
+                _to_float(getattr(latest_financial, "shares_outstanding", None)),
+            )
+        eps_current = eps_ttm if eps_ttm not in (None, 0) else eps_fallback
+        price_current = live_price or row.price or price_map.get(current_year)
+        if price_current is not None and eps_current not in (None, 0):
+            row.price = price_current
+            row.eps = eps_current
+            row.pe = price_current / eps_current
+            row.revenue = row.revenue or _to_float(getattr(latest_financial, "revenue", None))
+            row.net_income = row.net_income or _to_float(getattr(latest_financial, "net_income", None))
+            row.valuation_basis = "TTM" if eps_ttm not in (None, 0) else "FY (prev)"
+
+    history.sort(key=lambda r: r.fiscal_year)
+    return history[-limit:]

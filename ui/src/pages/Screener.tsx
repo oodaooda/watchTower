@@ -130,7 +130,7 @@ export default function ScreenerPage() {
   return (
     //<div className="w-full max-w-none px-4 md:px-8 lg:px-12 xl:px-16 py-4">
     //<div className="w-full max-w-[1800px] mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-2">
-    <div className="mt-6 w-full max-w-[1800px] mx-auto rounded-2xl  border-zinc-200 dark:border-zinc-800 overflow-hidden">
+    <div className="mt-6 w-full rounded-2xl border-zinc-200 dark:border-zinc-800 overflow-hidden">
 
       <FilterBar
         search={search}

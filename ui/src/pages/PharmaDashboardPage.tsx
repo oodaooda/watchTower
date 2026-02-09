@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import BackButton from "../components/BackButton";
 import { fetchPharmaCompanies, PharmaCompanyListItem } from "../lib/api";
 
 const btn =
@@ -40,13 +41,11 @@ export default function PharmaDashboardPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 md:px-6 lg:px-8 py-4 space-y-4">
+    <div className="mt-6 space-y-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h1 className="text-2xl font-bold">Pharma Pipeline</h1>
         <div className="flex gap-2">
-          <Link className={btn} to="/">
-            ← Back to Screener
-          </Link>
+          <BackButton />
         </div>
       </div>
 

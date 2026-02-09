@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { API_BASE } from "../lib/api";
-import { Link } from "react-router-dom";
+import BackButton from "../components/BackButton";
 
 type PreviewItem = { ticker: string; name?: string | null; cik?: string | number | null; exchange?: string | null };
 type UpdatedItem = {
@@ -130,9 +130,7 @@ export default function UniverseSyncPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Link to="/" className="text-sm text-sky-600 hover:underline">
-          ← Back to Screener
-        </Link>
+        <BackButton />
         <h1 className="text-2xl font-bold">Universe Sync (SEC)</h1>
       </div>
 

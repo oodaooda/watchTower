@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import BackButton from "../components/BackButton";
 import {
   fetchPharmaCompany,
   refreshPharmaCompany,
@@ -360,16 +361,14 @@ export default function PharmaCompanyPage() {
   const salesTotal = summary && salesCurrency ? summary.latest_annual_sales_by_currency[salesCurrency] : undefined;
 
   return (
-    <div className="w-full max-w-[1800px] mx-auto px-4 md:px-6 lg:px-8 py-4 space-y-4">
+    <div className="mt-6 space-y-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">{detail?.company.name ?? identifier}</h1>
           <p className="text-sm text-zinc-500">{detail?.company.lead_sponsor ?? "Lead sponsor unavailable"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link className={btn} to="/pharma">
-            ← Pharma Dashboard
-          </Link>
+          <BackButton to="/pharma" label="Back" />
           <Link className={btn} to={`/financials/${detail?.company.id ?? ""}`}>
             Financials →
           </Link>

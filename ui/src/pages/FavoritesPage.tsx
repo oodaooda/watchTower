@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE } from "../lib/api";
 import { Link } from "react-router-dom";
+import BackButton from "../components/BackButton";
 
 type Favorite = {
   company_id: number;
@@ -108,14 +109,17 @@ export default function FavoritesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Favorite Companies</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Track tickers with live price deltas (refreshes automatically every 60 seconds).
-          </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <BackButton />
+          <div>
+            <h1 className="text-2xl font-bold">Favorite Companies</h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Track tickers with live price deltas (refreshes automatically every 60 seconds).
+            </p>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{statusText}</div>
+          </div>
         </div>
-        <div className="text-sm text-zinc-500 dark:text-zinc-400">{statusText}</div>
       </div>
 
       <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2">
