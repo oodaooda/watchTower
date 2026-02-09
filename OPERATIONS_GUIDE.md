@@ -75,6 +75,23 @@ Test the QA endpoint:
 curl -X POST http://localhost:8000/qa -H 'Content-Type: application/json' -d '{"question":"What is the P/E of AAPL?"}'
 ```
 
+## OpenClaw Integration
+
+Set env vars:
+```
+OPENCLAW_API_TOKEN=your_token
+OPENCLAW_ALLOWED_IPS=1.2.3.4,5.6.7.8
+OPENCLAW_RATE_LIMIT=60
+```
+
+Example request:
+```
+curl -X POST http://localhost:8000/openclaw/qa \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer your_token' \
+  -d '{"question":"What is the P/E of AAPL?"}'
+```
+
 ## Testing
 
 ```

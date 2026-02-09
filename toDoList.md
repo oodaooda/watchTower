@@ -45,11 +45,11 @@ This checklist is broken into phases. Each phase includes verification steps and
 
 ## Phase 3 — OpenClaw API Integration
 
-- [ ] Add API token auth (Bearer)
-- [ ] Add optional IP allowlist
-- [ ] Add rate limiting
-- [ ] Expose `POST /openclaw/qa` (or reuse `/qa` with auth)
-- [ ] Add OpenClaw integration guide + example payloads
+- [x] Add API token auth (Bearer)
+- [x] Add optional IP allowlist
+- [x] Add rate limiting
+- [x] Expose `POST /openclaw/qa` (or reuse `/qa` with auth)
+- [x] Add OpenClaw integration guide + example payloads
 
 **Phase 3 Tests**
 - [ ] Integration: authorized request succeeds, unauthorized fails

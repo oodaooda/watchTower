@@ -58,3 +58,4 @@ See `OPERATIONS_GUIDE.md` for the canonical commands.
 - Any external integration must use an API key or token.
 - Keys are read from environment variables only.
 - Network access must be restricted to known peers for internal services.
+ - OpenClaw integration must enforce token auth + allowlist + rate limits.

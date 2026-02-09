@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     sec_user_agent: str
     pharma_openai_api_key: str | None = Field(default=None, alias="PHARMA_OPENAI_API_KEY")
     modeling_openai_api_key: str | None = Field(default=None, alias="MODELING_OPENAI_API_KEY")
+    openclaw_api_token: str | None = Field(default=None, alias="OPENCLAW_API_TOKEN")
+    openclaw_allowed_ips: str | None = Field(default=None, alias="OPENCLAW_ALLOWED_IPS")
+    openclaw_rate_limit: int = Field(60, alias="OPENCLAW_RATE_LIMIT")
 
     class Config:
         env_file = ".env"            # <- load from repo root

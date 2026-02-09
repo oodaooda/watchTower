@@ -137,12 +137,7 @@ def _history(db: Session, company_id: int, field: str, years: int = 10):
     ][::-1]
 
 
-@router.post("", response_model=QAResponse)
-def qa_answer(payload: QARequest, db: Session = Depends(get_db)):
-    question = payload.question.strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="Question is required")
-
+def _answer_question(question: str, db: Session) -> QAResponse:
     parsed = _parse_with_llm(question) or {}
     action = parsed.get("action") or ""
     ticker = parsed.get("ticker") or _extract_ticker(question)
@@ -224,3 +219,11 @@ def qa_answer(payload: QARequest, db: Session = Depends(get_db)):
         citations=["financials_annual"],
         data={"ticker": ticker, "history": rows},
     )
+
+
+@router.post("", response_model=QAResponse)
+def qa_answer(payload: QARequest, db: Session = Depends(get_db)):
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+    return _answer_question(question, db)

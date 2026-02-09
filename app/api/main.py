@@ -5,7 +5,7 @@ from uuid import uuid4
 import time
 import logging
 
-from app.routers import companies, screen, financials, metrics, definitions, health, valuation, industries, prices, pharma, universe, favorites, modeling, qa
+from app.routers import companies, screen, financials, metrics, definitions, health, valuation, industries, prices, pharma, universe, favorites, modeling, qa, openclaw
 from app.jobs.scheduler import start_scheduler, nightly_fundamentals_job, daily_prices_job, dev_router
 
 from app.core.config import settings
@@ -78,6 +78,7 @@ app.include_router(universe.router)
 app.include_router(favorites.router)
 app.include_router(modeling.router)
 app.include_router(qa.router)
+app.include_router(openclaw.router)
 app.include_router(dev_router)
 
 # --- Versioned API (v1) ---
@@ -96,6 +97,7 @@ v1.include_router(universe.router)
 v1.include_router(favorites.router)
 v1.include_router(modeling.router)
 v1.include_router(qa.router)
+v1.include_router(openclaw.router)
 app.include_router(v1)
 
 
