@@ -50,10 +50,11 @@ This checklist is broken into phases. Each phase includes verification steps and
 - [x] Add rate limiting
 - [x] Expose `POST /openclaw/qa` (or reuse `/qa` with auth)
 - [x] Add OpenClaw integration guide + example payloads
+- [x] Add Settings page for OpenClaw API keys
 
 **Phase 3 Tests**
-- [ ] Integration: authorized request succeeds, unauthorized fails
-- [ ] Manual: OpenClaw example payload works
+- [x] Integration: authorized request succeeds, unauthorized fails
+- [x] Manual: OpenClaw example payload works
 
 **Commit Point**
 - [ ] Commit after Phase 3 tests pass.

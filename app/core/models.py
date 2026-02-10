@@ -240,6 +240,30 @@ class Definition(Base):
     body_md: Mapped[str] = mapped_column(String)
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    key_prefix = Column(String, nullable=False)
+    key_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    revoked_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_api_keys_active", "revoked_at"),
+    )
+
+
 class ModelingAssumption(Base):
     __tablename__ = "modeling_assumptions"
 

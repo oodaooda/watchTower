@@ -10,6 +10,7 @@ import CompanyProfilePage from "./pages/CompanyProfilePage";
 import ModelingPage from "./pages/ModelingPage";
 import FinanceUniversityPage from "./pages/FinanceUniversityPage";
 import DataAssistantPage from "./pages/DataAssistantPage";
+import SettingsPage from "./pages/SettingsPage";
 import PharmaDashboardPage from "./pages/PharmaDashboardPage";
 import PharmaCompanyPage from "./pages/PharmaCompanyPage";
 import UniverseSyncPage from "./pages/UniverseSyncPage";
@@ -37,6 +38,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="favorites" element={<FavoritesPage />} />
           <Route path="finance-university" element={<FinanceUniversityPage />} />
           <Route path="data-assistant" element={<DataAssistantPage />} />
+          <Route path="settings" element={<SettingsPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

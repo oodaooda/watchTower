@@ -1,27 +1,40 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
+import hashlib
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.schemas import QARequest, QAResponse
 from app.routers.qa import _answer_question
+from app.core.models import ApiKey
+from sqlalchemy import select
 
 router = APIRouter(prefix="/openclaw", tags=["openclaw"])
 
 _rate_state = {}
 
 
-def _check_token(authorization: str | None):
-    token = settings.openclaw_api_token
-    if not token:
-        raise HTTPException(status_code=503, detail="OpenClaw API token not configured")
+def _check_token(authorization: str | None, db: Session):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
-    if authorization.replace("Bearer ", "", 1).strip() != token:
+    token = authorization.replace("Bearer ", "", 1).strip()
+    # Allow static env token as master key if configured
+    if settings.openclaw_api_token and token == settings.openclaw_api_token:
+        return
+    if not token:
         raise HTTPException(status_code=403, detail="Invalid token")
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    row = db.execute(
+        select(ApiKey).where(ApiKey.key_hash == token_hash, ApiKey.revoked_at.is_(None))
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    row.last_used_at = datetime.utcnow()
+    db.commit()
 
 
 def _check_ip(request: Request):
@@ -55,7 +68,7 @@ def openclaw_qa(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    _check_token(authorization)
+    _check_token(authorization, db)
     _check_ip(request)
     _rate_limit(request)
     question = payload.question.strip()

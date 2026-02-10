@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openclaw_api_token: str | None = Field(default=None, alias="OPENCLAW_API_TOKEN")
     openclaw_allowed_ips: str | None = Field(default=None, alias="OPENCLAW_ALLOWED_IPS")
     openclaw_rate_limit: int = Field(60, alias="OPENCLAW_RATE_LIMIT")
+    admin_settings_token: str | None = Field(default=None, alias="SETTINGS_ADMIN_TOKEN")
 
     class Config:
         env_file = ".env"            # <- load from repo root
@@ -41,6 +42,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "allow"
+        protected_namespaces = ("model_",)
 
 
 settings = Settings()

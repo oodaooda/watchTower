@@ -359,3 +359,34 @@ class QAResponse(BaseModel):
     answer: str
     citations: List[str] = Field(default_factory=list)
     data: Dict[str, Optional[str | float | int | List[Dict[str, Optional[str | float | int]]]]] = Field(default_factory=dict)
+
+
+# ---------- Settings / API Keys ----------
+class ApiKeyOut(BaseModel):
+    id: int
+    name: str
+    key_prefix: str
+    created_at: Optional[str] = None
+    revoked_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApiKeyCreateIn(BaseModel):
+    name: str
+
+
+class ApiKeyCreateOut(BaseModel):
+    id: int
+    name: str
+    key: str
+    key_prefix: str
+
+
+class SettingsOut(BaseModel):
+    openclaw_max_keys: int
+    active_keys: int
+
+
+class SettingsIn(BaseModel):
+    openclaw_max_keys: int

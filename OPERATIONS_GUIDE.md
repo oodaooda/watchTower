@@ -92,6 +92,13 @@ curl -X POST http://localhost:8000/openclaw/qa \
   -d '{"question":"What is the P/E of AAPL?"}'
 ```
 
+## Settings UI (OpenClaw Keys)
+
+1) Set `SETTINGS_ADMIN_TOKEN` in `.env`
+2) Restart API
+3) Visit `/settings` and paste the admin token
+4) Generate OpenClaw keys and set max active keys
+
 ## Testing
 
 ```

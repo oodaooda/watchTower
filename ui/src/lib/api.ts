@@ -306,6 +306,81 @@ export async function askDataAssistant(question: string): Promise<QAResponse> {
   return res.json();
 }
 
+// -------- Settings (OpenClaw keys) --------
+
+export type SettingsOut = {
+  openclaw_max_keys: number;
+  active_keys: number;
+};
+
+export type ApiKeyOut = {
+  id: number;
+  name: string;
+  key_prefix: string;
+  created_at?: string | null;
+  revoked_at?: string | null;
+  last_used_at?: string | null;
+};
+
+export type ApiKeyCreateOut = {
+  id: number;
+  name: string;
+  key: string;
+  key_prefix: string;
+};
+
+function authHeaders(token: string) {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+export async function fetchOpenclawSettings(token: string): Promise<SettingsOut> {
+  const res = await fetch(`${API_BASE}/settings/openclaw`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`settings ${res.status}`);
+  return res.json();
+}
+
+export async function updateOpenclawSettings(token: string, openclaw_max_keys: number): Promise<SettingsOut> {
+  const res = await fetch(`${API_BASE}/settings/openclaw`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ openclaw_max_keys }),
+  });
+  if (!res.ok) throw new Error(`settings ${res.status}`);
+  return res.json();
+}
+
+export async function listOpenclawKeys(token: string): Promise<ApiKeyOut[]> {
+  const res = await fetch(`${API_BASE}/settings/openclaw/keys`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`settings/keys ${res.status}`);
+  return res.json();
+}
+
+export async function createOpenclawKey(token: string, name: string): Promise<ApiKeyCreateOut> {
+  const res = await fetch(`${API_BASE}/settings/openclaw/keys`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`settings/keys ${res.status}`);
+  return res.json();
+}
+
+export async function revokeOpenclawKey(token: string, id: number) {
+  const res = await fetch(`${API_BASE}/settings/openclaw/keys/${id}/revoke`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`settings/keys/revoke ${res.status}`);
+  return res.json();
+}
+
 // -------- Pharma endpoints --------
 
 export type PharmaCompanyListItem = {
