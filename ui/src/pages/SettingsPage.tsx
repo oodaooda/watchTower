@@ -35,7 +35,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) || "";
-    if (stored) setAdminToken(stored);
+    if (stored) {
+      setAdminToken(stored);
+      loadSettings(stored);
+    }
   }, []);
 
   const loadSettings = async (token: string) => {
@@ -53,9 +56,7 @@ export default function SettingsPage() {
 
   const handleSaveToken = () => {
     localStorage.setItem(STORAGE_KEY, adminToken);
-    if (adminToken) {
-      loadSettings(adminToken);
-    }
+    if (adminToken) loadSettings(adminToken);
   };
 
   const handleUpdateMax = async () => {
@@ -123,6 +124,11 @@ export default function SettingsPage() {
             Save
           </button>
         </div>
+        {!adminToken ? (
+          <div className="text-xs text-zinc-500">
+            Paste your Settings admin token and click Save to enable key actions.
+          </div>
+        ) : null}
         {error ? <div className="text-sm text-red-400">{error}</div> : null}
       </div>
 
@@ -135,7 +141,7 @@ export default function SettingsPage() {
             value={maxKeys}
             onChange={(e) => setMaxKeys(Number(e.target.value))}
           />
-          <button className={btnGhost} onClick={handleUpdateMax}>
+          <button className={btnGhost} onClick={handleUpdateMax} disabled={!adminToken}>
             Update
           </button>
           <div className="text-xs text-zinc-500">
@@ -153,10 +159,15 @@ export default function SettingsPage() {
             placeholder="Key name (e.g., OpenClaw VPS)"
             className="flex-1 h-9 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
           />
-          <button className={btn} onClick={handleCreateKey}>
+          <button className={btn} onClick={handleCreateKey} disabled={!adminToken || !keyName.trim()}>
             Generate
           </button>
         </div>
+        {!adminToken ? (
+          <div className="text-xs text-zinc-500">
+            Admin token required to generate keys.
+          </div>
+        ) : null}
         {newKey ? (
           <div className="rounded-xl border border-amber-300/40 bg-amber-50/60 dark:bg-amber-900/20 px-3 py-2 text-xs">
             <div className="font-semibold">New key (copy now — shown once):</div>

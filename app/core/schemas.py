@@ -5,6 +5,7 @@ These map ORM rows to API-friendly shapes.
 from __future__ import annotations
 
 from typing import Optional, List, Dict
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 # ---------- Companies ----------
@@ -366,9 +367,9 @@ class ApiKeyOut(BaseModel):
     id: int
     name: str
     key_prefix: str
-    created_at: Optional[str] = None
-    revoked_at: Optional[str] = None
-    last_used_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
 

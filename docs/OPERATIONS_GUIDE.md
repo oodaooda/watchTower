@@ -1,6 +1,7 @@
 # watchTower Operations Guide
 
 This guide defines the canonical way to run, migrate, and troubleshoot watchTower.
+Architecture philosophy and service-boundary decisions are in `ARCHITECTURE.md`.
 
 ## Canonical Development Setup (Docker + Vite)
 

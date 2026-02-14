@@ -4,8 +4,8 @@ This checklist is broken into phases. Each phase includes verification steps and
 
 ## Phase 1 — Refactor & Engineering Alignment
 
-- [x] Create `ENGINEERING_STANDARDS.md`
-- [x] Create `OPERATIONS_GUIDE.md` (runbook equivalent)
+- [x] Create `docs/ENGINEERING_STANDARDS.md`
+- [x] Create `docs/OPERATIONS_GUIDE.md` (runbook equivalent)
 - [x] Standardize canonical DB workflow in docs
 - [x] Add API versioning (`/api/v1`)
 - [x] Add request logging + request IDs
@@ -31,7 +31,7 @@ This checklist is broken into phases. Each phase includes verification steps and
 - [x] Add LLM guardrails (schema validation, fallback response)
 - [x] Add structured audit logging for LLM requests/responses
 - [x] Add UI “Data Assistant” chat tab
-- [x] Update docs (`ENGINEERING_STANDARDS.md`, `OPERATIONS_GUIDE.md`)
+- [x] Update docs (`docs/ENGINEERING_STANDARDS.md`, `docs/OPERATIONS_GUIDE.md`)
 
 **Phase 2 Tests**
 - [x] Unit: query tool validation

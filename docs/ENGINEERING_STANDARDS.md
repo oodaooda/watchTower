@@ -1,6 +1,7 @@
 # watchTower Engineering Standards
 
 This document defines the operational and engineering standards for watchTower. The goal is long‑term reliability, clear ownership, and safe change.
+Architecture philosophy and boundaries are documented in `ARCHITECTURE.md`.
 
 ## 1) Environments
 
