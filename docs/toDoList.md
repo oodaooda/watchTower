@@ -120,8 +120,8 @@ Execution order for Phase 4: `4A -> 4D -> 4B -> 4C` (resolver foundations first)
 - [x] Manual UI: article citations are readable/clickable and trace includes ingestion steps
 
 **Phase 4C Commit/Push Point**
-- [ ] Commit after Phase 4C tests pass
-- [ ] Push after regression check (`/qa`, `/openclaw/qa`, Data Assistant UI, Company profile news)
+- [x] Commit after Phase 4C tests pass
+- [x] Push after regression check (`/qa`, `/openclaw/qa`, Data Assistant UI, Company profile news)
 
 ### Phase 4D — Root-Cause Entity Resolution (No More Token Guessing, execute before 4B/4C)
 
