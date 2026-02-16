@@ -9,6 +9,7 @@ from app.routers.qa import (
     _news_context_for_company,
     _synthesize_answer,
     _answer_question,
+    _resolve_companies_from_plan,
 )
 from types import SimpleNamespace
 
@@ -214,3 +215,71 @@ def test_answer_question_headlines_only_fallback_message(monkeypatch):
     response = _answer_question("why was tesla down last week", db=SimpleNamespace())
     assert "Confidence:" in response.answer
     assert "relied on headline summaries only" in response.answer
+
+
+def test_resolver_requires_confidence_threshold(monkeypatch):
+    low_conf_company = SimpleNamespace(id=42, ticker="EHVVF", name="Ehave, Inc.")
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_company_candidate",
+        lambda db, question, candidate: (low_conf_company, 0.6, "single_contains_low_confidence"),
+    )
+    resolved, unresolved, diagnostics = _resolve_companies_from_plan(
+        db=SimpleNamespace(),
+        question="latest news you have",
+        plan={"companies": ["HAVE"]},
+    )
+    assert resolved == []
+    assert unresolved == ["HAVE"]
+    assert diagnostics[0]["decision"] == "clarification_required"
+    assert diagnostics[0]["resolved_ticker"] == "EHVVF"
+
+
+def test_answer_question_returns_clarification_when_no_confident_resolution(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {"companies": ["HAVE"], "actions": ["company_snapshot"], "years": 10, "compare": False},
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: (
+            [],
+            ["HAVE"],
+            [
+                {
+                    "candidate": "HAVE",
+                    "resolved_ticker": "EHVVF",
+                    "resolved_name": "Ehave, Inc.",
+                    "confidence": 0.6,
+                    "reason": "single_contains_low_confidence",
+                    "decision": "clarification_required",
+                }
+            ],
+        ),
+    )
+    response = _answer_question("latest news you have", db=SimpleNamespace())
+    assert "Please clarify the ticker or full company name" in response.answer
+    assert "HAVE -> Ehave, Inc. (EHVVF)" in response.answer
+    assert response.data["clarification_needed"] is True
+
+
+def test_resolve_companies_compare_returns_both_when_confident(monkeypatch):
+    nvda = SimpleNamespace(id=9, ticker="NVDA", name="NVIDIA CORP")
+    amd = SimpleNamespace(id=43, ticker="AMD", name="ADVANCED MICRO DEVICES INC")
+
+    def fake_resolver(db, question, candidate):
+        key = candidate.upper()
+        if key == "NVDA":
+            return nvda, 1.0, "exact_ticker"
+        if key == "AMD":
+            return amd, 1.0, "exact_ticker"
+        return None, 0.0, "no_name_match"
+
+    monkeypatch.setattr("app.routers.qa._resolve_company_candidate", fake_resolver)
+    resolved, unresolved, diagnostics = _resolve_companies_from_plan(
+        db=SimpleNamespace(),
+        question="nvda vs amd",
+        plan={"companies": ["NVDA", "AMD"]},
+    )
+    assert [c.ticker for c in resolved] == ["NVDA", "AMD"]
+    assert unresolved == []
+    assert [d["decision"] for d in diagnostics] == ["resolved", "resolved"]

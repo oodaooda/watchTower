@@ -125,28 +125,28 @@ Execution order for Phase 4: `4A -> 4D -> 4B -> 4C` (resolver foundations first)
 
 ### Phase 4D — Root-Cause Entity Resolution (No More Token Guessing, execute before 4B/4C)
 
-- [ ] Define deterministic entity-resolution contract (ticker, company name, confidence, reason)
-- [ ] Replace heuristic token guessing with resolver pipeline:
-- [ ] normalize prompt entities
-- [ ] validate ticker-like tokens against `companies`
-- [ ] ranked company-name candidate matching (exact > prefix > fuzzy)
-- [ ] explicit low-confidence handling (return clarification needed)
-- [ ] Add candidate scoring and tie-break policy (documented)
-- [ ] Add optional compare-mode resolver (`A vs B`) with partial-success behavior
-- [ ] Return resolver diagnostics in trace (`resolved`, `unresolved`, `confidence`)
+- [x] Define deterministic entity-resolution contract (ticker, company name, confidence, reason)
+- [x] Replace heuristic token guessing with resolver pipeline:
+- [x] normalize prompt entities
+- [x] validate ticker-like tokens against `companies`
+- [x] ranked company-name candidate matching (exact > prefix > fuzzy)
+- [x] explicit low-confidence handling (return clarification needed)
+- [x] Add candidate scoring and tie-break policy (documented)
+- [x] Add optional compare-mode resolver (`A vs B`) with partial-success behavior
+- [x] Return resolver diagnostics in trace (`resolved`, `unresolved`, `confidence`)
 
 **Phase 4D Tests**
-- [ ] Unit: resolver ignores conversational tokens (`can`, `you`, `vs`, etc.) by design (not stopword patch)
-- [ ] Unit: ticker validation only resolves when ticker exists in `companies`
-- [ ] Unit: ambiguous name returns clarification-needed/low-confidence path
-- [ ] Unit: compare prompt resolves both entities when available
-- [ ] Integration: `/qa` compare prompt does not resolve unrelated tickers
-- [ ] Integration: unresolved entity path is graceful (no 500, no random match)
-- [ ] Manual UI: trace shows confidence/reason per resolved entity
+- [x] Unit: resolver ignores conversational tokens (`can`, `you`, `vs`, etc.) by design (not stopword patch)
+- [x] Unit: ticker validation only resolves when ticker exists in `companies`
+- [x] Unit: ambiguous name returns clarification-needed/low-confidence path
+- [x] Unit: compare prompt resolves both entities when available
+- [x] Integration: `/qa` compare prompt does not resolve unrelated tickers
+- [x] Integration: unresolved entity path is graceful (no 500, no random match)
+- [x] Manual UI: trace shows confidence/reason per resolved entity
 
 **Phase 4D Commit/Push Point**
-- [ ] Commit after Phase 4D tests pass
-- [ ] Push after regression check (`/qa`, compare prompts, OpenClaw `/openclaw/qa`)
+- [x] Commit after Phase 4D tests pass
+- [x] Push after regression check (`/qa`, compare prompts, OpenClaw `/openclaw/qa`)
 
 ---
 

@@ -83,3 +83,15 @@ Before split:
 - Improve test pyramid (unit + integration + smoke in CI).
 - Add architecture fitness checks (layering/import boundaries).
 - Keep public contracts stable under `/api/v1`.
+
+## 10) Resolver Contract (QA)
+
+Entity resolution in `/qa` follows a deterministic contract:
+- Candidate types: ticker-like tokens and company-name candidates.
+- Reasons are explicit (`exact_ticker`, `exact_name`, `unique_prefix_name`, `ambiguous_name`, `no_name_match`).
+- Confidence is numeric and decisioned:
+  - `resolved` when confidence >= `0.8`
+  - `clarification_required` when confidence < `0.8` but a plausible match exists
+  - `unresolved` when no plausible match exists
+- Tie-break policy is deterministic (exact > unique prefix > lower-confidence contains), never random.
+- Low-confidence matches must not auto-execute data queries; the API asks for clarification instead.

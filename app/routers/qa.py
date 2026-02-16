@@ -68,6 +68,7 @@ COMPANY_TOKEN_STOPWORDS = {
     "LATEST",
     "OF",
 }
+RESOLVER_AUTO_RESOLVE_MIN_CONFIDENCE = 0.8
 NEWS_FETCH_TIMEOUT_SECONDS = 4.0
 NEWS_FETCH_MAX_BYTES = 150_000
 NEWS_FETCH_MAX_ARTICLES = 3
@@ -620,8 +621,12 @@ def _resolve_company_candidate(db: Session, question: str, candidate: str) -> Tu
     for m in matches:
         if (m.name or "").strip().lower() == exact:
             return m, 0.95, "exact_name"
-    # Deterministic fallback: shortest lexical match.
-    return matches[0], 0.6, "fuzzy_name"
+    prefix_matches = [m for m in matches if (m.name or "").strip().lower().startswith(exact)]
+    if len(prefix_matches) == 1 and len(exact) >= 3:
+        return prefix_matches[0], 0.85, "unique_prefix_name"
+    if len(matches) == 1 and len(exact) >= 4:
+        return matches[0], 0.75, "single_contains_low_confidence"
+    return matches[0], 0.4, "ambiguous_name"
 
 
 def _resolve_companies_from_plan(
@@ -638,33 +643,50 @@ def _resolve_companies_from_plan(
         if not company:
             unresolved.append(candidate)
             diagnostics.append(
-                {"candidate": candidate, "resolved_ticker": None, "confidence": 0.0, "reason": reason}
+                {
+                    "candidate": candidate,
+                    "resolved_ticker": None,
+                    "confidence": 0.0,
+                    "reason": reason,
+                    "decision": "unresolved",
+                }
+            )
+            continue
+        if confidence < RESOLVER_AUTO_RESOLVE_MIN_CONFIDENCE:
+            unresolved.append(candidate)
+            diagnostics.append(
+                {
+                    "candidate": candidate,
+                    "resolved_ticker": company.ticker,
+                    "resolved_name": company.name,
+                    "confidence": confidence,
+                    "reason": reason,
+                    "decision": "clarification_required",
+                }
             )
             continue
         if company.id in seen_ids:
             diagnostics.append(
-                {"candidate": candidate, "resolved_ticker": company.ticker, "confidence": confidence, "reason": "duplicate"}
+                {
+                    "candidate": candidate,
+                    "resolved_ticker": company.ticker,
+                    "confidence": confidence,
+                    "reason": "duplicate",
+                    "decision": "duplicate",
+                }
             )
             continue
         seen_ids.add(company.id)
         resolved.append(company)
         diagnostics.append(
-            {"candidate": candidate, "resolved_ticker": company.ticker, "confidence": confidence, "reason": reason}
+            {
+                "candidate": candidate,
+                "resolved_ticker": company.ticker,
+                "confidence": confidence,
+                "reason": reason,
+                "decision": "resolved",
+            }
         )
-
-    if not resolved:
-        fallback = _resolve_company_by_name(db, question)
-        if fallback:
-            resolved.append(fallback)
-            seen_ids.add(fallback.id)
-            diagnostics.append(
-                {
-                    "candidate": "__fallback_from_question__",
-                    "resolved_ticker": fallback.ticker,
-                    "confidence": 0.55,
-                    "reason": "keyword_fallback",
-                }
-            )
 
     return resolved, unresolved, diagnostics
 
@@ -1010,9 +1032,24 @@ def _answer_question(question: str, db: Session) -> QAResponse:
     plan = _build_plan(question)
     companies, unresolved, resolver_diagnostics = _resolve_companies_from_plan(db, question, plan)
     if not companies:
+        clarification_candidates = [
+            d for d in resolver_diagnostics if d.get("decision") == "clarification_required"
+        ]
+        clarification_lines: List[str] = []
+        for d in clarification_candidates[:5]:
+            if d.get("resolved_ticker"):
+                label = d.get("resolved_name") or d.get("resolved_ticker")
+                clarification_lines.append(f"- {d.get('candidate')} -> {label} ({d.get('resolved_ticker')})")
+        if clarification_lines:
+            clarification_text = (
+                "I couldn't confidently resolve one or more companies from this question. "
+                "Please clarify the ticker or full company name:\n" + "\n".join(clarification_lines)
+            )
+        else:
+            clarification_text = "I couldn't resolve a company from this question."
         log.info("qa_company_not_found", extra={"question": question, "companies": plan.get("companies", [])})
         return QAResponse(
-            answer="I couldn't resolve a company from this question.",
+            answer=clarification_text,
             citations=["companies"],
             data={
                 "plan": plan,
@@ -1020,6 +1057,8 @@ def _answer_question(question: str, db: Session) -> QAResponse:
                 "sources": ["companies"],
                 "unresolved_companies": plan.get("companies", []),
                 "resolver_diagnostics": resolver_diagnostics,
+                "clarification_needed": bool(clarification_lines),
+                "clarification_candidates": clarification_lines,
             },
             trace=["Planner could not resolve any company from the prompt."],
         )
