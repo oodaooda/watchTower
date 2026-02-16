@@ -294,6 +294,7 @@ export type QAResponse = {
   answer: string;
   citations: string[];
   data?: Record<string, unknown>;
+  trace?: string[];
 };
 
 export async function askDataAssistant(question: string): Promise<QAResponse> {

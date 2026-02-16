@@ -57,7 +57,96 @@ This checklist is broken into phases. Each phase includes verification steps and
 - [x] Manual: OpenClaw example payload works
 
 **Commit Point**
-- [ ] Commit after Phase 3 tests pass.
+- [x] Commit after Phase 3 tests pass.
+
+---
+
+## Phase 4 — Data Assistant Robustness (Planner + SQL Trace + Hybrid Responses)
+
+Execution order for Phase 4: `4A -> 4D -> 4B -> 4C` (resolver foundations first).
+
+### Phase 4A — Multi-Company + SQL Trace
+
+- [x] Extend planner schema to support multi-company prompts (`companies`, `compare`, `response_mode`)
+- [x] Add multi-company resolver (`NVDA vs TSMC` style prompts)
+- [x] Add safe execution trace object (`sql_template`, `params`, `rows`, `duration_ms`)
+- [x] Add API response fields for trace sections (`plan`, `queries`, `sources`)
+- [x] Add UI trace viewer with readable sections and toggle
+
+**Phase 4A Tests**
+- [ ] Unit: planner handles multi-company prompts
+- [ ] Unit: resolver returns partial success when one company is missing
+- [ ] Unit: trace serializer redacts unsafe values and keeps allowlisted params only
+- [ ] Integration: `/qa` returns both companies for compare prompt
+- [ ] Manual UI: trace panel shows plan + query summaries correctly
+
+**Phase 4A Commit/Push Point**
+- [ ] Commit after Phase 4A tests pass
+- [ ] Push after commit and manual UI verification
+
+### Phase 4B — Hybrid Grounded + General Responses (execute after 4D)
+
+- [ ] Add response mode routing: `grounded` / `general` / `hybrid`
+- [ ] Add general-context synthesis path for conceptual finance questions
+- [ ] Enforce grounding rules for numeric claims from DB data only
+- [ ] Add explicit answer sections: `What data shows`, `General context`, `Gaps`
+- [ ] Add source tagging in response (`database`, `general_context`)
+
+**Phase 4B Tests**
+- [ ] Unit: numeric claims validator rejects unsupported numbers
+- [ ] Unit: response mode classifier routes conceptual prompts to `general`/`hybrid`
+- [ ] Integration: broad question (`tell me about tesla`) returns grounded + context sections
+- [ ] Integration: conceptual question (`what is operating leverage`) answers without forcing ticker
+- [ ] Manual UI: response formatting is readable and labels context vs data
+
+**Phase 4B Commit/Push Point**
+- [ ] Commit after Phase 4B tests pass
+- [ ] Push after regression check (`/qa`, `/openclaw/qa`, Data Assistant UI)
+
+### Phase 4C — News Ingestion for Holistic Explanations (execute after 4D)
+
+- [x] Add `news_context` action for “why up/down” prompts
+- [x] Rank candidate headlines by relevance to prompt/company context
+- [x] Fetch top-N article pages (allowlisted fetch + timeout + size caps)
+- [x] Extract readable content snippets (title/body summary + source URL)
+- [x] Add synthesis section combining DB metrics + news catalysts + confidence
+- [x] Add citations with article links in response payload/UI
+
+**Phase 4C Tests**
+- [x] Unit: headline ranking prioritizes keyword/sentiment matches
+- [x] Unit: fetch guardrails enforce domain/timeout/size limits
+- [x] Integration: “why was TSLA down last week” returns news-backed explanation
+- [x] Integration: graceful fallback when article fetch fails (headlines-only mode)
+- [x] Manual UI: article citations are readable/clickable and trace includes ingestion steps
+
+**Phase 4C Commit/Push Point**
+- [ ] Commit after Phase 4C tests pass
+- [ ] Push after regression check (`/qa`, `/openclaw/qa`, Data Assistant UI, Company profile news)
+
+### Phase 4D — Root-Cause Entity Resolution (No More Token Guessing, execute before 4B/4C)
+
+- [ ] Define deterministic entity-resolution contract (ticker, company name, confidence, reason)
+- [ ] Replace heuristic token guessing with resolver pipeline:
+- [ ] normalize prompt entities
+- [ ] validate ticker-like tokens against `companies`
+- [ ] ranked company-name candidate matching (exact > prefix > fuzzy)
+- [ ] explicit low-confidence handling (return clarification needed)
+- [ ] Add candidate scoring and tie-break policy (documented)
+- [ ] Add optional compare-mode resolver (`A vs B`) with partial-success behavior
+- [ ] Return resolver diagnostics in trace (`resolved`, `unresolved`, `confidence`)
+
+**Phase 4D Tests**
+- [ ] Unit: resolver ignores conversational tokens (`can`, `you`, `vs`, etc.) by design (not stopword patch)
+- [ ] Unit: ticker validation only resolves when ticker exists in `companies`
+- [ ] Unit: ambiguous name returns clarification-needed/low-confidence path
+- [ ] Unit: compare prompt resolves both entities when available
+- [ ] Integration: `/qa` compare prompt does not resolve unrelated tickers
+- [ ] Integration: unresolved entity path is graceful (no 500, no random match)
+- [ ] Manual UI: trace shows confidence/reason per resolved entity
+
+**Phase 4D Commit/Push Point**
+- [ ] Commit after Phase 4D tests pass
+- [ ] Push after regression check (`/qa`, compare prompts, OpenClaw `/openclaw/qa`)
 
 ---
 

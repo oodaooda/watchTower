@@ -4,7 +4,7 @@ These map ORM rows to API-friendly shapes.
 """
 from __future__ import annotations
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -359,7 +359,8 @@ class QARequest(BaseModel):
 class QAResponse(BaseModel):
     answer: str
     citations: List[str] = Field(default_factory=list)
-    data: Dict[str, Optional[str | float | int | List[Dict[str, Optional[str | float | int]]]]] = Field(default_factory=dict)
+    data: Dict[str, Any] = Field(default_factory=dict)
+    trace: List[str] = Field(default_factory=list)
 
 
 # ---------- Settings / API Keys ----------

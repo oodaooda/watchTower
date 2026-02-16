@@ -54,6 +54,7 @@ See `OPERATIONS_GUIDE.md` for the canonical commands.
 ## 9) Change Management
 - Every non‑trivial change must include a short “what changed / why” note in PR or commit.
 - Feature flags for major changes (LLM‑driven functionality).
+- Bug fixes must target root cause, not symptom masking; add regression tests for the failure mode whenever practical.
 
 ## 10) Security
 - Any external integration must use an API key or token.

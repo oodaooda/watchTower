@@ -27,6 +27,7 @@ watchTower should only split services when there is measurable pressure (team au
 - **Single source of truth in Postgres** for canonical financial/stateful data.
 - **Deterministic core logic** for valuation/modeling; LLM output is advisory and validated.
 - **Versioned public routes** via `/api/v1` for contract stability.
+- **Fix root causes, not symptoms**: avoid shipping quick fixes that only mask issues. Every production bug fix should identify and address the underlying failure mode, with regression tests where practical.
 
 ## 4) Backend Shape
 
