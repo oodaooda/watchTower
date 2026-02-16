@@ -86,22 +86,29 @@ Execution order for Phase 4: `4A -> 4D -> 4B -> 4C` (resolver foundations first)
 
 ### Phase 4B — Hybrid Grounded + General Responses (execute after 4D)
 
-- [ ] Add response mode routing: `grounded` / `general` / `hybrid`
-- [ ] Add general-context synthesis path for conceptual finance questions
-- [ ] Enforce grounding rules for numeric claims from DB data only
-- [ ] Add explicit answer sections: `What data shows`, `General context`, `Gaps`
-- [ ] Add source tagging in response (`database`, `general_context`)
+- [x] Add response mode routing: `grounded` / `general` / `hybrid`
+- [x] Add general-context synthesis path for conceptual finance questions
+- [x] Enforce grounding rules for numeric claims from DB data only
+- [x] Add explicit answer sections: `What data shows`, `General context`, `Gaps`
+- [x] Add source tagging in response (`database`, `general_context`)
 
 **Phase 4B Tests**
-- [ ] Unit: numeric claims validator rejects unsupported numbers
-- [ ] Unit: response mode classifier routes conceptual prompts to `general`/`hybrid`
-- [ ] Integration: broad question (`tell me about tesla`) returns grounded + context sections
-- [ ] Integration: conceptual question (`what is operating leverage`) answers without forcing ticker
-- [ ] Manual UI: response formatting is readable and labels context vs data
+- [x] Unit: numeric claims validator rejects unsupported numbers
+- [x] Unit: response mode classifier routes conceptual prompts to `general`/`hybrid`
+- [x] Integration: broad question (`tell me about tesla`) returns grounded + context sections
+- [x] Integration: conceptual question (`what is operating leverage`) answers without forcing ticker
+- [x] Manual UI: response formatting is readable and labels context vs data
 
 **Phase 4B Commit/Push Point**
-- [ ] Commit after Phase 4B tests pass
-- [ ] Push after regression check (`/qa`, `/openclaw/qa`, Data Assistant UI)
+- [x] Commit after Phase 4B tests pass
+- [x] Push after regression check (`/qa`, `/openclaw/qa`, Data Assistant UI)
+
+**Phase 4B Follow-up (Variable Retrieval Robustness)**
+- [ ] Improve variable-specific answer targeting (e.g., "last close price") when multiple metrics are available in snapshot payloads.
+- [ ] Add intent-to-field contract map in docs (`price` -> `close_price`, `valuation` -> `pe_ttm`, etc.).
+- [ ] Add deterministic field-priority policy for synthesis (requested fields first, then optional context).
+- [ ] Add unit tests for metric-intent prompts across common variants ("price", "last close", "latest close", "share price").
+- [ ] Evaluate optional tool-routing upgrade: explicit metric tool calls from planner output vs static action bundles.
 
 ### Phase 4C — News Ingestion for Holistic Explanations (execute after 4D)
 

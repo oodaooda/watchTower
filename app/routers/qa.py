@@ -392,6 +392,214 @@ def _is_news_question(question_lower: str) -> bool:
     return any(k in question_lower for k in ["why", "down", "up", "last week", "news", "headline", "sentiment"])
 
 
+def _is_conceptual_question(question: str) -> bool:
+    q = (question or "").strip().lower()
+    if not q:
+        return False
+    conceptual_starters = (
+        "what is",
+        "what are",
+        "explain",
+        "how does",
+        "how do",
+        "why do",
+        "difference between",
+    )
+    conceptual_terms = (
+        "operating leverage",
+        "gross margin",
+        "net margin",
+        "discount rate",
+        "wacc",
+        "dcf",
+        "valuation multiple",
+        "price to earnings",
+        "p/e",
+    )
+    return q.startswith(conceptual_starters) or any(term in q for term in conceptual_terms)
+
+
+def _is_metric_fact_question(question: str) -> bool:
+    q = (question or "").strip().lower()
+    if not q:
+        return False
+    metric_terms = (
+        "last close",
+        "close price",
+        "price",
+        "p/e",
+        "pe ratio",
+        "valuation",
+        "revenue",
+        "net income",
+        "earnings",
+        "eps",
+        "margin",
+    )
+    return any(term in q for term in metric_terms)
+
+
+def _requested_metric_fields(question: str) -> List[str]:
+    q = (question or "").lower()
+    fields: List[str] = []
+    if any(k in q for k in ["last close", "close price", "share price", "stock price", "price"]):
+        fields.append("close_price")
+    if any(k in q for k in ["p/e", "pe ratio", "price to earnings", "valuation"]):
+        fields.append("pe_ttm")
+    if "revenue" in q:
+        fields.append("revenue")
+    if any(k in q for k in ["net income", "earnings", "profit"]):
+        fields.append("net_income")
+    if "eps" in q:
+        fields.append("eps")
+    # Preserve order and uniqueness.
+    out: List[str] = []
+    for f in fields:
+        if f not in out:
+            out.append(f)
+    return out
+
+
+def _contains_numeric_claims(text: str) -> bool:
+    return bool(re.search(r"[$%]|\d", text or ""))
+
+
+def _strip_numeric_sentences(text: str) -> str:
+    if not text:
+        return ""
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    kept = [p for p in parts if p and not _contains_numeric_claims(p)]
+    return " ".join(kept).strip()
+
+
+def _classify_response_mode(question: str, has_entities: bool, parsed_mode: Optional[str]) -> str:
+    if parsed_mode in ALLOWED_RESPONSE_MODES:
+        return parsed_mode
+    if has_entities and _is_metric_fact_question(question):
+        return "grounded"
+    if _is_conceptual_question(question):
+        return "hybrid" if has_entities else "general"
+    return "grounded"
+
+
+def _synthesize_general_context(question: str) -> str:
+    client = _openai_client()
+    if not client:
+        return (
+            "General context: This is a conceptual finance question. Focus on definitions, drivers, "
+            "tradeoffs, and how to evaluate evidence before drawing conclusions."
+        )
+    prompt = (
+        "You are a finance assistant. Answer conceptually with no numeric claims, prices, dates, or percentages. "
+        "Explain the concept, common drivers, and practical interpretation in plain language."
+    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.2,
+        )
+        raw = (response.choices[0].message.content or "").strip()
+    except Exception:
+        raw = ""
+    cleaned = _strip_numeric_sentences(raw)
+    return cleaned or "General context is available, but avoid numeric conclusions without grounded data."
+
+
+def _build_structured_non_news_answer(
+    question: str,
+    companies: List[Company],
+    payload_by_company: Dict[str, Any],
+    unresolved: List[str],
+    mode: str,
+) -> Tuple[str, List[str]]:
+    data_lines: List[str] = []
+    gaps: List[str] = []
+    used_sources: List[str] = []
+    requested_fields = _requested_metric_fields(question)
+
+    if companies:
+        used_sources.append("database")
+        for company in companies:
+            company_payload = payload_by_company.get(company.ticker, {}) or {}
+            snap = company_payload.get("company_snapshot", {}) or {}
+            pe_payload = company_payload.get("pe", {}) or {}
+            latest_fy = snap.get("latest_fiscal_year")
+            revenue = snap.get("revenue")
+            net_income = snap.get("net_income")
+            close_price = snap.get("close_price")
+            eps = snap.get("eps")
+            pe_ttm = pe_payload.get("pe_ttm") if pe_payload else snap.get("pe_ttm")
+            row = [f"{company.name} ({company.ticker})"]
+            if requested_fields:
+                if "close_price" in requested_fields:
+                    if isinstance(close_price, (int, float)):
+                        row.append(f"last close price: ${close_price:.2f}")
+                    else:
+                        gaps.append(f"{company.ticker}: close price is unavailable.")
+                if "pe_ttm" in requested_fields:
+                    if isinstance(pe_ttm, (int, float)):
+                        row.append(f"P/E: {pe_ttm:.2f}")
+                    else:
+                        gaps.append(f"{company.ticker}: P/E is unavailable.")
+                if "revenue" in requested_fields:
+                    if latest_fy and isinstance(revenue, (int, float)):
+                        row.append(f"revenue FY {latest_fy}: ${revenue/1e9:.2f}B")
+                    else:
+                        gaps.append(f"{company.ticker}: revenue is unavailable.")
+                if "net_income" in requested_fields:
+                    if latest_fy and isinstance(net_income, (int, float)):
+                        row.append(f"net income FY {latest_fy}: ${net_income/1e9:.2f}B")
+                    else:
+                        gaps.append(f"{company.ticker}: net income is unavailable.")
+                if "eps" in requested_fields:
+                    if isinstance(eps, (int, float)):
+                        row.append(f"EPS: {eps:.2f}")
+                    else:
+                        gaps.append(f"{company.ticker}: EPS is unavailable.")
+            else:
+                if latest_fy and isinstance(revenue, (int, float)):
+                    row.append(f"revenue FY {latest_fy}: ${revenue/1e9:.2f}B")
+                if latest_fy and isinstance(net_income, (int, float)):
+                    row.append(f"net income FY {latest_fy}: ${net_income/1e9:.2f}B")
+                if isinstance(pe_ttm, (int, float)):
+                    row.append(f"P/E {pe_ttm:.2f}")
+            data_lines.append("- " + " | ".join(row))
+    else:
+        data_lines.append("- No company-specific rows were resolved from the database for this prompt.")
+        gaps.append("No resolved ticker/company for grounded metrics.")
+
+    if unresolved:
+        gaps.append("Unresolved entities: " + ", ".join(unresolved) + ".")
+
+    if not gaps:
+        gaps.append("No critical data gaps detected for resolved entities.")
+
+    general_context = ""
+    if mode in {"general", "hybrid"}:
+        used_sources.append("general_context")
+        general_context = _synthesize_general_context(question)
+    else:
+        general_context = "Grounded mode: interpretation is limited to retrieved database fields."
+
+    answer = "\n".join(
+        [
+            "What data shows:",
+            *data_lines,
+            "",
+            "General context:",
+            f"- {general_context}",
+            "",
+            "Gaps:",
+            *[f"- {g}" for g in gaps],
+        ]
+    ).strip()
+    return answer, used_sources
+
+
 def _news_context_for_company(company: Company, question: str, limit: int = 15) -> Dict[str, Any]:
     key = settings.alpha_vantage_api_key
     if not key:
@@ -506,11 +714,11 @@ def _build_plan(question: str) -> Dict[str, Any]:
         q = question.lower()
         compare = (" vs " in q) or (" versus " in q) or (" compare " in q)
 
-    response_mode = "grounded"
+    parsed_mode: Optional[str] = None
     if isinstance(parsed, dict):
         mode = parsed.get("response_mode")
-        if isinstance(mode, str) and mode in ALLOWED_RESPONSE_MODES:
-            response_mode = mode
+        if isinstance(mode, str):
+            parsed_mode = mode
 
     def _normalize_company_candidate(raw: str) -> Optional[str]:
         c = (raw or "").strip()
@@ -590,6 +798,8 @@ def _build_plan(question: str) -> Dict[str, Any]:
         for action in required:
             if action not in actions:
                 actions.append(action)
+
+    response_mode = _classify_response_mode(question, has_entities=bool(dedup_companies), parsed_mode=parsed_mode)
 
     return {
         "companies": dedup_companies,
@@ -1030,8 +1240,38 @@ def _synthesize_news_answer(
 
 def _answer_question(question: str, db: Session) -> QAResponse:
     plan = _build_plan(question)
+    response_mode = plan.get("response_mode", "grounded")
     companies, unresolved, resolver_diagnostics = _resolve_companies_from_plan(db, question, plan)
     if not companies:
+        if response_mode in {"general", "hybrid"}:
+            answer, used_sources = _build_structured_non_news_answer(
+                question=question,
+                companies=[],
+                payload_by_company={},
+                unresolved=unresolved or plan.get("companies", []),
+                mode=response_mode,
+            )
+            return QAResponse(
+                answer=answer,
+                citations=["general_context"] if "general_context" in used_sources else [],
+                data={
+                    "plan": {
+                        "companies_requested": plan.get("companies", []),
+                        "companies_resolved": [],
+                        "unresolved_companies": unresolved or plan.get("companies", []),
+                        "actions": [],
+                        "years": int(plan.get("years") or 10),
+                        "compare": bool(plan.get("compare")),
+                        "response_mode": response_mode,
+                        "resolver_diagnostics": resolver_diagnostics,
+                    },
+                    "queries": [],
+                    "sources": used_sources,
+                    "unresolved_companies": unresolved or plan.get("companies", []),
+                    "resolver_diagnostics": resolver_diagnostics,
+                },
+                trace=["General/hybrid mode answer generated without resolved company rows."],
+            )
         clarification_candidates = [
             d for d in resolver_diagnostics if d.get("decision") == "clarification_required"
         ]
@@ -1125,7 +1365,19 @@ def _answer_question(question: str, db: Session) -> QAResponse:
             ]
         )
 
-    answer = _synthesize_answer(question, companies, plan_out, results_by_company, unresolved)
+    if "news_context" in actions:
+        answer = _synthesize_answer(question, companies, plan_out, results_by_company, unresolved)
+        used_sources = ["database"]
+    else:
+        answer, used_sources = _build_structured_non_news_answer(
+            question=question,
+            companies=companies,
+            payload_by_company=results_by_company,
+            unresolved=unresolved,
+            mode=response_mode,
+        )
+    if "general_context" in used_sources:
+        citations.add("general_context")
     if missing_for_comparison:
         answer = (
             f"{answer}\n\nWhat is missing to complete comparison:\n"
@@ -1148,6 +1400,10 @@ def _answer_question(question: str, db: Session) -> QAResponse:
             "results": results_by_company,
             "queries": query_trace,
             "sources": sorted(citations),
+            "source_tags": {
+                "what_data_shows": "database",
+                "general_context": "general_context" if "general_context" in used_sources else "database",
+            },
             "missing_for_comparison": missing_for_comparison,
         },
         trace=trace,

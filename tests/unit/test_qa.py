@@ -10,12 +10,40 @@ from app.routers.qa import (
     _synthesize_answer,
     _answer_question,
     _resolve_companies_from_plan,
+    _classify_response_mode,
+    _strip_numeric_sentences,
+    _requested_metric_fields,
 )
 from types import SimpleNamespace
 
 
 def test_extract_ticker_skips_common_words():
     assert _extract_ticker("what was it's earnings for the last 10 years") is None
+
+
+def test_classify_response_mode_routes_conceptual_prompt_to_general():
+    mode = _classify_response_mode("what is operating leverage", has_entities=False, parsed_mode=None)
+    assert mode == "general"
+
+
+def test_classify_response_mode_keeps_metric_fact_question_grounded():
+    mode = _classify_response_mode("what is amd's last close price", has_entities=True, parsed_mode=None)
+    assert mode == "grounded"
+
+
+def test_requested_metric_fields_detects_close_price():
+    fields = _requested_metric_fields("what is amd's last close price?")
+    assert "close_price" in fields
+    assert "pe_ttm" not in fields
+
+
+def test_strip_numeric_sentences_removes_numbered_claims():
+    cleaned = _strip_numeric_sentences(
+        "Operating leverage links fixed costs to margin expansion. It rose 25% last year. "
+        "Higher fixed cost intensity increases sensitivity to revenue changes."
+    )
+    assert "25%" not in cleaned
+    assert "fixed costs" in cleaned
 
 
 def test_extract_keywords_from_company_name():
@@ -260,6 +288,74 @@ def test_answer_question_returns_clarification_when_no_confident_resolution(monk
     assert "Please clarify the ticker or full company name" in response.answer
     assert "HAVE -> Ehave, Inc. (EHVVF)" in response.answer
     assert response.data["clarification_needed"] is True
+
+
+def test_answer_question_general_mode_without_ticker(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {
+            "companies": [],
+            "actions": [],
+            "years": 10,
+            "compare": False,
+            "response_mode": "general",
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: ([], [], []),
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._synthesize_general_context",
+        lambda question: "Operating leverage explains how fixed costs amplify profit sensitivity.",
+    )
+    response = _answer_question("what is operating leverage", db=SimpleNamespace())
+    assert "What data shows:" in response.answer
+    assert "General context:" in response.answer
+    assert "Gaps:" in response.answer
+    assert "general_context" in response.citations
+
+
+def test_answer_question_metric_focus_returns_close_price_line(monkeypatch):
+    company = SimpleNamespace(ticker="AMD", name="ADVANCED MICRO DEVICES INC", id=43)
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {
+            "companies": ["AMD"],
+            "actions": ["company_snapshot", "pe"],
+            "years": 10,
+            "compare": False,
+            "response_mode": "grounded",
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: ([company], [], []),
+    )
+
+    def fake_execute_action(db, company_obj, action, years, question):
+        if action == "company_snapshot":
+            return (
+                {
+                    "ticker": "AMD",
+                    "company_name": "ADVANCED MICRO DEVICES INC",
+                    "latest_fiscal_year": 2024,
+                    "revenue": 25785000000.0,
+                    "net_income": 1641000000.0,
+                    "close_price": 215.05,
+                },
+                ["companies", "financials_annual", "prices_annual"],
+                "snapshot",
+                [],
+            )
+        if action == "pe":
+            return ({"ticker": "AMD", "pe_ttm": None, "fiscal_year": 2024}, ["prices_annual"], "pe", [])
+        return ({}, [], "noop", [])
+
+    monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+
+    response = _answer_question("what is amd's last close price?", db=SimpleNamespace())
+    assert "last close price: $215.05" in response.answer
 
 
 def test_resolve_companies_compare_returns_both_when_confident(monkeypatch):
