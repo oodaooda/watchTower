@@ -1238,6 +1238,51 @@ def _synthesize_news_answer(
     return "\n".join(lines).strip()
 
 
+def _collect_news_items(results_by_company: Dict[str, Any], max_items: int = 5) -> List[Dict[str, Any]]:
+    ranked: List[Dict[str, Any]] = []
+    for ticker, payload in results_by_company.items():
+        if not isinstance(payload, dict):
+            continue
+        news_ctx = payload.get("news_context")
+        if not isinstance(news_ctx, dict):
+            continue
+        items = news_ctx.get("items", [])
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title")
+            url = item.get("url")
+            if not isinstance(title, str) or not isinstance(url, str) or not url.startswith("http"):
+                continue
+            score = item.get("relevance_score")
+            rank = int(score) if isinstance(score, (int, float)) else 0
+            ranked.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "source": item.get("source"),
+                    "publishedAt": item.get("published_at"),
+                    "sentiment": item.get("sentiment"),
+                    "ticker": ticker,
+                    "_rank": rank,
+                }
+            )
+    ranked.sort(key=lambda r: r.get("_rank", 0), reverse=True)
+    out: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for item in ranked:
+        url = item["url"]
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        out.append({k: v for k, v in item.items() if k != "_rank"})
+        if len(out) >= max_items:
+            break
+    return out
+
+
 def _answer_question(question: str, db: Session) -> QAResponse:
     plan = _build_plan(question)
     response_mode = plan.get("response_mode", "grounded")
@@ -1254,6 +1299,7 @@ def _answer_question(question: str, db: Session) -> QAResponse:
             return QAResponse(
                 answer=answer,
                 citations=["general_context"] if "general_context" in used_sources else [],
+                news=[],
                 data={
                     "plan": {
                         "companies_requested": plan.get("companies", []),
@@ -1267,6 +1313,7 @@ def _answer_question(question: str, db: Session) -> QAResponse:
                     },
                     "queries": [],
                     "sources": used_sources,
+                    "news": [],
                     "unresolved_companies": unresolved or plan.get("companies", []),
                     "resolver_diagnostics": resolver_diagnostics,
                 },
@@ -1291,10 +1338,12 @@ def _answer_question(question: str, db: Session) -> QAResponse:
         return QAResponse(
             answer=clarification_text,
             citations=["companies"],
+            news=[],
             data={
                 "plan": plan,
                 "queries": [],
                 "sources": ["companies"],
+                "news": [],
                 "unresolved_companies": plan.get("companies", []),
                 "resolver_diagnostics": resolver_diagnostics,
                 "clarification_needed": bool(clarification_lines),
@@ -1378,6 +1427,7 @@ def _answer_question(question: str, db: Session) -> QAResponse:
         )
     if "general_context" in used_sources:
         citations.add("general_context")
+    news_items = _collect_news_items(results_by_company, max_items=5)
     if missing_for_comparison:
         answer = (
             f"{answer}\n\nWhat is missing to complete comparison:\n"
@@ -1395,11 +1445,13 @@ def _answer_question(question: str, db: Session) -> QAResponse:
     return QAResponse(
         answer=answer,
         citations=sorted(citations),
+        news=news_items,
         data={
             "plan": plan_out,
             "results": results_by_company,
             "queries": query_trace,
             "sources": sorted(citations),
+            "news": news_items,
             "source_tags": {
                 "what_data_shows": "database",
                 "general_context": "general_context" if "general_context" in used_sources else "database",

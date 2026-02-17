@@ -356,9 +356,19 @@ class QARequest(BaseModel):
     question: str
 
 
+class QANewsItem(BaseModel):
+    title: str
+    url: str
+    source: Optional[str] = None
+    publishedAt: Optional[str] = None
+    sentiment: Optional[str] = None
+    ticker: Optional[str] = None
+
+
 class QAResponse(BaseModel):
     answer: str
     citations: List[str] = Field(default_factory=list)
+    news: List[QANewsItem] = Field(default_factory=list)
     data: Dict[str, Any] = Field(default_factory=dict)
     trace: List[str] = Field(default_factory=list)
 

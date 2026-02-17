@@ -358,6 +358,72 @@ def test_answer_question_metric_focus_returns_close_price_line(monkeypatch):
     assert "last close price: $215.05" in response.answer
 
 
+def test_answer_question_exposes_top_level_news_for_openclaw(monkeypatch):
+    company = SimpleNamespace(ticker="QCLS", name="Q/C TECHNOLOGIES, INC.", id=6291)
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {
+            "companies": ["QCLS"],
+            "actions": ["company_snapshot", "pe", "news_context"],
+            "years": 10,
+            "compare": False,
+            "response_mode": "grounded",
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: ([company], [], []),
+    )
+
+    def fake_execute_action(db, company_obj, action, years, question):
+        if action == "company_snapshot":
+            return (
+                {"ticker": "QCLS", "company_name": "Q/C TECHNOLOGIES, INC.", "close_price": 3.95},
+                ["companies", "prices_annual"],
+                "snapshot",
+                [],
+            )
+        if action == "pe":
+            return ({"ticker": "QCLS", "pe_ttm": -0.3543, "fiscal_year": 2024}, ["prices_annual"], "pe", [])
+        if action == "news_context":
+            return (
+                {
+                    "ticker": "QCLS",
+                    "items": [
+                        {
+                            "title": "QCLS Surges on European Expansion News",
+                            "url": "https://example.com/qcls1",
+                            "source": "StocksToTrade",
+                            "published_at": "2026-02-16T00:00:00Z",
+                            "sentiment": "Somewhat-Bullish",
+                            "relevance_score": 7,
+                        },
+                        {
+                            "title": "QCLS Stock Surges Amid Financial Developments",
+                            "url": "https://example.com/qcls2",
+                            "source": "StocksToTrade",
+                            "published_at": "2026-02-15T00:00:00Z",
+                            "sentiment": "Bearish",
+                            "relevance_score": 6,
+                        },
+                    ],
+                    "articles": [],
+                },
+                ["news_sentiment"],
+                "news",
+                [],
+            )
+        return ({}, [], "noop", [])
+
+    monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+
+    response = _answer_question("latest news about qcls", db=SimpleNamespace())
+    assert len(response.news) >= 2
+    assert response.news[0].url.startswith("https://")
+    assert response.data["news"][0]["url"].startswith("https://")
+    assert response.data["news"][0]["publishedAt"] == "2026-02-16T00:00:00Z"
+
+
 def test_resolve_companies_compare_returns_both_when_confident(monkeypatch):
     nvda = SimpleNamespace(id=9, ticker="NVDA", name="NVIDIA CORP")
     amd = SimpleNamespace(id=43, ticker="AMD", name="ADVANCED MICRO DEVICES INC")
