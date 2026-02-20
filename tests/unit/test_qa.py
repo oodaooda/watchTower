@@ -13,6 +13,11 @@ from app.routers.qa import (
     _classify_response_mode,
     _strip_numeric_sentences,
     _requested_metric_fields,
+    _validate_readonly_sql,
+    _ensure_limit,
+    _extract_tables_from_sql,
+    _should_use_quarterly_fallback,
+    _synthesize_sql_answer,
 )
 from types import SimpleNamespace
 
@@ -35,6 +40,63 @@ def test_requested_metric_fields_detects_close_price():
     fields = _requested_metric_fields("what is amd's last close price?")
     assert "close_price" in fields
     assert "pe_ttm" not in fields
+
+
+def test_validate_readonly_sql_blocks_ddl():
+    ok, reason = _validate_readonly_sql("DROP TABLE companies", {"companies"})
+    assert ok is False
+    assert reason in {"non_select_statement", "banned_sql_token"}
+
+
+def test_validate_readonly_sql_allows_select_known_table():
+    ok, reason = _validate_readonly_sql("SELECT ticker FROM companies LIMIT 5", {"companies"})
+    assert ok is True
+    assert reason == "ok"
+
+
+def test_validate_readonly_sql_rejects_unknown_table():
+    ok, reason = _validate_readonly_sql("SELECT * FROM unknown_table LIMIT 5", {"companies"})
+    assert ok is False
+    assert reason.startswith("table_not_allowed:")
+
+
+def test_ensure_limit_adds_limit_when_missing():
+    sql = _ensure_limit("SELECT ticker FROM companies", 100)
+    assert "LIMIT 100" in sql
+
+
+def test_extract_tables_from_sql_reads_from_and_join():
+    tables = _extract_tables_from_sql(
+        "SELECT c.ticker, p.close_price FROM companies c JOIN prices_annual p ON c.id=p.company_id"
+    )
+    assert "companies" in tables
+    assert "prices_annual" in tables
+
+
+def test_should_use_quarterly_fallback_when_report_date_query_returns_zero():
+    sql = "SELECT * FROM financials_quarterly WHERE report_date >= CURRENT_DATE - INTERVAL '5 years'"
+    assert _should_use_quarterly_fallback(sql, []) is True
+    assert _should_use_quarterly_fallback(sql, [{"x": 1}]) is False
+
+
+def test_extract_tables_from_sql_ignores_current_date_token():
+    sql = "SELECT EXTRACT(YEAR FROM CURRENT_DATE) AS y FROM financials_quarterly fq JOIN companies c ON c.id=fq.company_id"
+    tables = _extract_tables_from_sql(sql)
+    assert "current_date" not in tables
+    assert "financials_quarterly" in tables
+    assert "companies" in tables
+
+
+def test_synthesize_sql_answer_quarterly_is_conversational():
+    rows = [
+        {"ticker": "TSLA", "fiscal_year": 2025, "fiscal_period": "Q3", "revenue": 28095000000.0, "net_income": 1373000000.0},
+        {"ticker": "TSLA", "fiscal_year": 2025, "fiscal_period": "Q2", "revenue": 22496000000.0, "net_income": 1172000000.0},
+        {"ticker": "TSLA", "fiscal_year": 2025, "fiscal_period": "Q1", "revenue": 19335000000.0, "net_income": 409000000.0},
+    ]
+    answer = _synthesize_sql_answer("quarterly revenue tesla", rows, "SELECT ...")
+    assert "Quarterly financial trend for TSLA" in answer
+    assert "Revenue in this window ranges" in answer
+    assert "Quarterly detail:" in answer
 
 
 def test_strip_numeric_sentences_removes_numbered_claims():
@@ -354,6 +416,44 @@ def test_answer_question_metric_focus_returns_close_price_line(monkeypatch):
 
     monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
 
+    response = _answer_question("what is amd's last close price?", db=SimpleNamespace())
+    assert "last close price: $215.05" in response.answer
+
+
+def test_answer_question_falls_back_when_sql_invalid(monkeypatch):
+    company = SimpleNamespace(ticker="AMD", name="ADVANCED MICRO DEVICES INC", id=43)
+    monkeypatch.setattr("app.routers.qa.settings.qa_sql_enabled", True)
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {
+            "companies": ["AMD"],
+            "actions": ["company_snapshot"],
+            "years": 10,
+            "compare": False,
+            "response_mode": "grounded",
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: ([company], [], []),
+    )
+    monkeypatch.setattr("app.routers.qa._get_schema_context", lambda db: {"tables": {"companies": []}})
+    monkeypatch.setattr("app.routers.qa._plan_sql_with_llm", lambda question, schema, companies: "DROP TABLE companies")
+
+    def fake_execute_action(db, company_obj, action, years, question):
+        return (
+            {
+                "ticker": "AMD",
+                "company_name": "ADVANCED MICRO DEVICES INC",
+                "latest_fiscal_year": 2024,
+                "close_price": 215.05,
+            },
+            ["companies", "prices_annual"],
+            "snapshot",
+            [],
+        )
+
+    monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
     response = _answer_question("what is amd's last close price?", db=SimpleNamespace())
     assert "last close price: $215.05" in response.answer
 

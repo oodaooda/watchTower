@@ -26,6 +26,8 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 ### API
 - Docker DB (canonical): `DATABASE_URL=postgresql+pg8000://postgres:postgres@db:5432/watchtower`
+- QA read-only DB (recommended): `QA_DATABASE_URL=postgresql+pg8000://watchtower_readonly:watchtower_readonly@db:5432/watchtower`
+- SQL QA controls: `QA_SQL_ENABLED=true`, `QA_SQL_ROW_LIMIT=100`, `QA_SQL_TIMEOUT_MS=3000`
 - Alpha Vantage: `ALPHA_VANTAGE_API_KEY=...`
 - OpenAI (Modeling): `MODELING_OPENAI_API_KEY=...`
 
@@ -68,6 +70,26 @@ Ensure:
 ## Canonical DB Choice
 
 Use the compose DB (`docker_db_1`) as the canonical development database. Avoid mixing it with separate host‑run Postgres containers.
+
+### QA Read-Only User (Postgres hard guardrail)
+
+Create a dedicated read-only role for LLM-driven QA and NL-to-SQL:
+```
+docker-compose -f docker/docker-compose.yml exec -T db psql -U postgres -d watchtower <<'SQL'
+CREATE ROLE watchtower_readonly LOGIN PASSWORD 'watchtower_readonly';
+GRANT CONNECT ON DATABASE watchtower TO watchtower_readonly;
+GRANT USAGE ON SCHEMA public TO watchtower_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO watchtower_readonly;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT SELECT ON TABLES TO watchtower_readonly;
+SQL
+```
+
+Validation (read works, write denied):
+```
+docker-compose -f docker/docker-compose.yml exec -T db psql -U watchtower_readonly -d watchtower -c "SELECT count(*) FROM companies;"
+docker-compose -f docker/docker-compose.yml exec -T db psql -U watchtower_readonly -d watchtower -c "UPDATE companies SET name=name WHERE 1=0;"
+```
 
 ## Data Assistant (QA)
 

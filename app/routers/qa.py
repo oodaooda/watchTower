@@ -11,7 +11,7 @@ import requests
 
 from fastapi import APIRouter, Depends, HTTPException
 import logging
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
 from app.routers.prices import _get_company_news
 
@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover - optional dependency in some local test e
     OpenAI = None  # type: ignore[assignment]
 
 from app.core.config import settings
-from app.core.db import get_db
+from app.core.db import get_qa_db
 from app.core.models import Company, FinancialAnnual, PriceAnnual
 from app.core.schemas import QARequest, QAResponse
 
@@ -73,6 +73,8 @@ NEWS_FETCH_TIMEOUT_SECONDS = 4.0
 NEWS_FETCH_MAX_BYTES = 150_000
 NEWS_FETCH_MAX_ARTICLES = 3
 NEWS_SNIPPET_CHARS = 800
+SCHEMA_CONTEXT_CACHE_TTL_SEC = 300
+_SCHEMA_CONTEXT_CACHE: Dict[str, Any] = {"ts": 0.0, "context": {}}
 
 
 def _openai_client() -> Optional[OpenAI]:
@@ -458,6 +460,311 @@ def _requested_metric_fields(question: str) -> List[str]:
         if f not in out:
             out.append(f)
     return out
+
+
+def _should_try_sql_path(question: str, response_mode: str, compare_mode: bool, actions: List[str]) -> bool:
+    if not settings.qa_sql_enabled:
+        return False
+    if response_mode != "grounded":
+        return False
+    if compare_mode:
+        return False
+    if "news_context" in actions:
+        return False
+    q = (question or "").lower()
+    sql_triggers = (
+        "what is",
+        "show",
+        "list",
+        "how many",
+        "average",
+        "max",
+        "min",
+        "top",
+        "latest",
+        "last close",
+        "price",
+        "revenue",
+        "net income",
+        "eps",
+        "pe",
+    )
+    return any(t in q for t in sql_triggers)
+
+
+def _get_schema_context(db: Session) -> Dict[str, Any]:
+    now = time.time()
+    if now - float(_SCHEMA_CONTEXT_CACHE.get("ts", 0.0)) < SCHEMA_CONTEXT_CACHE_TTL_SEC:
+        cached = _SCHEMA_CONTEXT_CACHE.get("context")
+        if isinstance(cached, dict) and cached:
+            return cached
+
+    rows = db.execute(
+        text(
+            """
+            SELECT table_name, column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema='public'
+            ORDER BY table_name, ordinal_position
+            """
+        )
+    ).mappings().all()
+    tables: Dict[str, List[Dict[str, str]]] = {}
+    for r in rows:
+        table = r.get("table_name")
+        column = r.get("column_name")
+        dtype = r.get("data_type")
+        if not isinstance(table, str) or not isinstance(column, str):
+            continue
+        tables.setdefault(table, []).append({"name": column, "type": str(dtype or "unknown")})
+    context = {"tables": tables, "database": "postgresql"}
+    _SCHEMA_CONTEXT_CACHE["ts"] = now
+    _SCHEMA_CONTEXT_CACHE["context"] = context
+    return context
+
+
+def _format_schema_for_prompt(context: Dict[str, Any], max_tables: int = 30) -> str:
+    tables = context.get("tables", {})
+    if not isinstance(tables, dict):
+        return ""
+    lines: List[str] = []
+    for idx, (table, cols) in enumerate(tables.items()):
+        if idx >= max_tables:
+            break
+        col_chunks = []
+        if isinstance(cols, list):
+            for c in cols[:30]:
+                if isinstance(c, dict):
+                    col_chunks.append(f"{c.get('name')}:{c.get('type')}")
+        lines.append(f"{table}({', '.join(col_chunks)})")
+    return "\n".join(lines)
+
+
+def _plan_sql_with_llm(question: str, schema_context: Dict[str, Any], companies: List[Company]) -> Optional[str]:
+    client = _openai_client()
+    if not client:
+        return None
+    schema_text = _format_schema_for_prompt(schema_context)
+    company_hints = ", ".join([f"{c.name}({c.ticker})" for c in companies]) if companies else "none"
+    system = (
+        "You are a SQL planner for PostgreSQL. Return strict JSON only: {\"sql\": \"...\"}. "
+        "Rules: SELECT-only; no DDL/DML; single statement; include LIMIT <= 100. "
+        "Prefer annual financial/price tables and companies table joins by company_id. "
+        "Important: in financials_quarterly, report_date may be NULL; for year windows use fiscal_year/fiscal_period, "
+        "not report_date filters."
+    )
+    user = (
+        f"Question: {question}\n"
+        f"Resolved companies: {company_hints}\n"
+        f"Schema:\n{schema_text}\n"
+    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.0,
+        )
+        raw = response.choices[0].message.content or "{}"
+        payload = json.loads(raw)
+        sql = payload.get("sql") if isinstance(payload, dict) else None
+        return sql.strip() if isinstance(sql, str) else None
+    except Exception:
+        return None
+
+
+def _extract_tables_from_sql(sql: str) -> List[str]:
+    ignore = {
+        "current_date",
+        "current_timestamp",
+        "now",
+        "interval",
+        "date_trunc",
+        "extract",
+    }
+    tokens = re.findall(r"\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)", sql, flags=re.IGNORECASE)
+    dedup: List[str] = []
+    for t in tokens:
+        tl = t.lower()
+        if tl in ignore:
+            continue
+        if tl not in dedup:
+            dedup.append(tl)
+    return dedup
+
+
+def _validate_readonly_sql(sql: str, allowed_tables: set[str]) -> Tuple[bool, str]:
+    s = (sql or "").strip()
+    if not s:
+        return False, "empty_sql"
+    lowered = s.lower()
+    if ";" in s[:-1]:
+        return False, "multiple_statements_not_allowed"
+    if not (lowered.startswith("select") or lowered.startswith("with")):
+        return False, "non_select_statement"
+    banned = [
+        "insert ",
+        "update ",
+        "delete ",
+        "drop ",
+        "alter ",
+        "truncate ",
+        "create ",
+        "grant ",
+        "revoke ",
+        "copy ",
+        "execute ",
+        "call ",
+        "pg_sleep",
+        "--",
+        "/*",
+    ]
+    if any(b in lowered for b in banned):
+        return False, "banned_sql_token"
+    for table in _extract_tables_from_sql(lowered):
+        if table not in allowed_tables:
+            return False, f"table_not_allowed:{table}"
+    return True, "ok"
+
+
+def _ensure_limit(sql: str, limit: int) -> str:
+    if re.search(r"\blimit\b", sql, flags=re.IGNORECASE):
+        return sql
+    return f"{sql.rstrip()} LIMIT {int(limit)}"
+
+
+def _coerce_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    try:
+        return float(value)
+    except Exception:
+        return str(value)
+
+
+def _fmt_money(value: Any) -> str:
+    if not isinstance(value, (int, float)):
+        return "n/a"
+    v = float(value)
+    abs_v = abs(v)
+    if abs_v >= 1_000_000_000:
+        return f"${v/1_000_000_000:.2f}B"
+    if abs_v >= 1_000_000:
+        return f"${v/1_000_000:.2f}M"
+    if abs_v >= 1_000:
+        return f"${v/1_000:.2f}K"
+    return f"${v:.2f}"
+
+
+def _execute_sql_query(db: Session, sql: str) -> Tuple[List[Dict[str, Any]], float]:
+    started = time.perf_counter()
+    timeout_ms = max(500, int(settings.qa_sql_timeout_ms or 3000))
+    db.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
+    result = db.execute(text(sql))
+    rows_raw = result.mappings().all()
+    rows = [{k: _coerce_value(v) for k, v in dict(r).items()} for r in rows_raw]
+    return rows, (time.perf_counter() - started) * 1000
+
+
+def _synthesize_sql_answer(question: str, rows: List[Dict[str, Any]], sql: str) -> str:
+    if not rows:
+        return "What data shows:\n- No rows matched this request.\n\nGeneral context:\n- Grounded mode SQL query executed.\n\nGaps:\n- Try narrowing or rephrasing the query."
+    first = rows[0]
+    keys = {str(k).lower() for k in first.keys()}
+    is_quarterly = "fiscal_year" in keys and "fiscal_period" in keys and ("revenue" in keys or "net_income" in keys)
+
+    if is_quarterly:
+        company_label = ""
+        if "ticker" in first and first.get("ticker"):
+            company_label = str(first.get("ticker"))
+        rev_values = [float(r["revenue"]) for r in rows if isinstance(r.get("revenue"), (int, float))]
+        ni_values = [float(r["net_income"]) for r in rows if isinstance(r.get("net_income"), (int, float))]
+        lead = "What data shows:\n"
+        if company_label:
+            lead += f"- Quarterly financial trend for {company_label} based on the returned window.\n"
+        if rev_values:
+            latest_rev = rev_values[0]
+            low_rev = min(rev_values)
+            high_rev = max(rev_values)
+            lead += (
+                f"- Revenue in this window ranges from {_fmt_money(low_rev)} to {_fmt_money(high_rev)}, "
+                f"with the latest quarter at {_fmt_money(latest_rev)}.\n"
+            )
+        if ni_values:
+            latest_ni = ni_values[0]
+            lead += f"- Latest quarterly net income is {_fmt_money(latest_ni)}.\n"
+
+        preview = rows[: min(6, len(rows))]
+        lines = []
+        for r in preview:
+            fy = r.get("fiscal_year")
+            fp = r.get("fiscal_period")
+            rev = _fmt_money(r.get("revenue")) if "revenue" in r else None
+            ni = _fmt_money(r.get("net_income")) if "net_income" in r else None
+            point = f"FY{fy} {fp}".strip()
+            extras = []
+            if rev is not None:
+                extras.append(f"revenue {rev}")
+            if ni is not None:
+                extras.append(f"net income {ni}")
+            if extras:
+                point += " — " + ", ".join(extras)
+            lines.append(f"- {point}")
+
+        gap = "No critical data gaps detected for returned rows."
+        if len(rows) > len(preview):
+            gap = "Results truncated to preview rows."
+        return (
+            f"{lead}\nGeneral context:\n- Grounded mode SQL query executed.\n\n"
+            f"Quarterly detail:\n{chr(10).join(lines)}\n\nGaps:\n- {gap}"
+        )
+
+    if len(rows) == 1:
+        row = rows[0]
+        facts = [f"{k}: {v}" for k, v in row.items()]
+        return (
+            "What data shows:\n- " + " | ".join(facts) +
+            "\n\nGeneral context:\n- Grounded mode SQL query executed.\n\nGaps:\n- No critical data gaps detected for returned row."
+        )
+    preview = rows[: min(5, len(rows))]
+    lines = []
+    for r in preview:
+        lines.append("- " + " | ".join([f"{k}: {v}" for k, v in r.items()]))
+    return (
+        "What data shows:\n" + "\n".join(lines) +
+        "\n\nGeneral context:\n- Grounded mode SQL query executed.\n\nGaps:\n- Results truncated to preview rows."
+    )
+
+
+def _should_use_quarterly_fallback(sql: str, rows: List[Dict[str, Any]]) -> bool:
+    if rows:
+        return False
+    lowered = (sql or "").lower()
+    return "financials_quarterly" in lowered and "report_date" in lowered
+
+
+def _execute_quarterly_fallback(
+    db: Session, companies: List[Company], years: int, row_limit: int
+) -> Tuple[List[Dict[str, Any]], float]:
+    if not companies:
+        return [], 0.0
+    ticker = companies[0].ticker
+    started = time.perf_counter()
+    stmt = text(
+        """
+        SELECT c.ticker, c.name, fq.fiscal_year, fq.fiscal_period, fq.revenue, fq.net_income
+        FROM financials_quarterly fq
+        JOIN companies c ON fq.company_id = c.id
+        WHERE c.ticker = :ticker
+        ORDER BY fq.fiscal_year DESC, fq.fiscal_period DESC
+        LIMIT :lim
+        """
+    )
+    lim = max(4, min(int(row_limit), max(4, int(years) * 4)))
+    rows_raw = db.execute(stmt, {"ticker": ticker, "lim": lim}).mappings().all()
+    rows = [{k: _coerce_value(v) for k, v in dict(r).items()} for r in rows_raw]
+    return rows, (time.perf_counter() - started) * 1000
 
 
 def _contains_numeric_claims(text: str) -> bool:
@@ -1238,6 +1545,41 @@ def _synthesize_news_answer(
     return "\n".join(lines).strip()
 
 
+def _render_answer_with_llm(
+    question: str,
+    response_mode: str,
+    context: Dict[str, Any],
+    fallback_answer: str,
+) -> str:
+    client = _openai_client()
+    if not client:
+        return fallback_answer
+    system = (
+        "You are a finance assistant. Your job is to format and explain retrieved facts conversationally. "
+        "Rules: use only provided facts for numbers; do not invent any values; if missing, say unavailable. "
+        "Keep the response concise and readable with short paragraphs or bullets."
+    )
+    user = {
+        "question": question,
+        "response_mode": response_mode,
+        "context": context,
+        "fallback_answer": fallback_answer,
+    }
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user, ensure_ascii=True)},
+            ],
+            temperature=0.2,
+        )
+        rendered = (response.choices[0].message.content or "").strip()
+        return rendered or fallback_answer
+    except Exception:
+        return fallback_answer
+
+
 def _collect_news_items(results_by_company: Dict[str, Any], max_items: int = 5) -> List[Dict[str, Any]]:
     ranked: List[Dict[str, Any]] = []
     for ticker, payload in results_by_company.items():
@@ -1287,14 +1629,110 @@ def _answer_question(question: str, db: Session) -> QAResponse:
     plan = _build_plan(question)
     response_mode = plan.get("response_mode", "grounded")
     companies, unresolved, resolver_diagnostics = _resolve_companies_from_plan(db, question, plan)
+    actions = [a for a in plan.get("actions", []) if a in ALLOWED_ACTIONS]
+    years = int(plan.get("years") or 10)
+    compare_mode = bool(plan.get("compare"))
+
+    if _should_try_sql_path(question, response_mode, compare_mode, actions):
+        schema_context = _get_schema_context(db)
+        sql_candidate = _plan_sql_with_llm(question, schema_context, companies)
+        trace_sql: List[str] = []
+        if sql_candidate:
+            allowed_tables = set(schema_context.get("tables", {}).keys())
+            ok, reason = _validate_readonly_sql(sql_candidate, allowed_tables)
+            trace_sql.append(f"SQL planner produced candidate (valid={ok}, reason={reason}).")
+            if ok:
+                sql_bounded = _ensure_limit(sql_candidate, int(settings.qa_sql_row_limit or 100))
+                try:
+                    rows, duration_ms = _execute_sql_query(db, sql_bounded)
+                    if _should_use_quarterly_fallback(sql_bounded, rows):
+                        trace_sql.append("SQL returned 0 rows with report_date filter; applying quarterly fallback by fiscal_year/fiscal_period.")
+                        rows, duration_ms = _execute_quarterly_fallback(
+                            db,
+                            companies=companies,
+                            years=years,
+                            row_limit=int(settings.qa_sql_row_limit or 100),
+                        )
+                    fallback_answer = _synthesize_sql_answer(question, rows, sql_bounded)
+                    answer = _render_answer_with_llm(
+                        question=question,
+                        response_mode=response_mode,
+                        context={
+                            "sql": sql_bounded,
+                            "rows": rows,
+                            "resolved_companies": [c.ticker for c in companies],
+                            "unresolved_companies": unresolved,
+                        },
+                        fallback_answer=fallback_answer,
+                    )
+                    news_items: List[Dict[str, Any]] = []
+                    query_trace = [
+                        _trace_entry(
+                            sql_bounded,
+                            {},
+                            len(rows),
+                            duration_ms,
+                        )
+                    ]
+                    return QAResponse(
+                        answer=answer,
+                        citations=sorted(list(_extract_tables_from_sql(sql_bounded))),
+                        news=news_items,
+                        data={
+                            "plan": {
+                                "companies_requested": plan.get("companies", []),
+                                "companies_resolved": [c.ticker for c in companies],
+                                "unresolved_companies": unresolved,
+                                "actions": actions,
+                                "years": years,
+                                "compare": compare_mode,
+                                "response_mode": response_mode,
+                                "resolver_diagnostics": resolver_diagnostics,
+                            },
+                            "queries": query_trace,
+                            "sources": sorted(list(_extract_tables_from_sql(sql_bounded))),
+                            "sql": {"statement": sql_bounded, "rows": rows},
+                            "news": [],
+                            "source_tags": {
+                                "what_data_shows": "database",
+                                "general_context": "database",
+                            },
+                            "missing_for_comparison": [],
+                        },
+                        trace=trace_sql + [
+                            f"SQL execution returned {len(rows)} row(s) in {round(duration_ms,2)}ms."
+                        ],
+                    )
+                except Exception as exc:
+                    trace_sql.append(f"SQL execution failed; falling back to deterministic actions ({type(exc).__name__}).")
+            else:
+                trace_sql.append("SQL validation failed; falling back to deterministic actions.")
+        else:
+            trace_sql.append("SQL planner unavailable; falling back to deterministic actions.")
+
     if not companies:
         if response_mode in {"general", "hybrid"}:
-            answer, used_sources = _build_structured_non_news_answer(
+            fallback_answer, used_sources = _build_structured_non_news_answer(
                 question=question,
                 companies=[],
                 payload_by_company={},
                 unresolved=unresolved or plan.get("companies", []),
                 mode=response_mode,
+            )
+            answer = _render_answer_with_llm(
+                question=question,
+                response_mode=response_mode,
+                context={
+                    "plan": {
+                        "companies_requested": plan.get("companies", []),
+                        "companies_resolved": [],
+                        "unresolved_companies": unresolved or plan.get("companies", []),
+                        "response_mode": response_mode,
+                    },
+                    "results": {},
+                    "unresolved_companies": unresolved or plan.get("companies", []),
+                },
+                fallback_answer=fallback_answer,
             )
             return QAResponse(
                 answer=answer,
@@ -1349,12 +1787,9 @@ def _answer_question(question: str, db: Session) -> QAResponse:
                 "clarification_needed": bool(clarification_lines),
                 "clarification_candidates": clarification_lines,
             },
-            trace=["Planner could not resolve any company from the prompt."],
+            trace=(trace_sql if 'trace_sql' in locals() else []) + ["Planner could not resolve any company from the prompt."],
         )
 
-    actions = [a for a in plan.get("actions", []) if a in ALLOWED_ACTIONS]
-    years = int(plan.get("years") or 10)
-    compare_mode = bool(plan.get("compare"))
     if compare_mode and len(companies) >= 1:
         # For compare prompts, return the richer metric set even for partial resolution.
         actions = ["company_snapshot", "pe", "revenue_history", "earnings_history", "margin_trend"]
@@ -1367,6 +1802,8 @@ def _answer_question(question: str, db: Session) -> QAResponse:
         f"Planner companies resolved: {', '.join([c.ticker for c in companies])}.",
         f"Planner actions: {', '.join(actions)}.",
     ]
+    if 'trace_sql' in locals():
+        trace.extend(trace_sql)
     if unresolved:
         trace.append(f"Unresolved companies: {', '.join(unresolved)}.")
     if resolver_diagnostics:
@@ -1415,15 +1852,36 @@ def _answer_question(question: str, db: Session) -> QAResponse:
         )
 
     if "news_context" in actions:
-        answer = _synthesize_answer(question, companies, plan_out, results_by_company, unresolved)
+        fallback_answer = _synthesize_answer(question, companies, plan_out, results_by_company, unresolved)
+        answer = _render_answer_with_llm(
+            question=question,
+            response_mode=response_mode,
+            context={
+                "plan": plan_out,
+                "results": results_by_company,
+                "unresolved_companies": unresolved,
+            },
+            fallback_answer=fallback_answer,
+        )
         used_sources = ["database"]
     else:
-        answer, used_sources = _build_structured_non_news_answer(
+        fallback_answer, used_sources = _build_structured_non_news_answer(
             question=question,
             companies=companies,
             payload_by_company=results_by_company,
             unresolved=unresolved,
             mode=response_mode,
+        )
+        answer = _render_answer_with_llm(
+            question=question,
+            response_mode=response_mode,
+            context={
+                "plan": plan_out,
+                "results": results_by_company,
+                "unresolved_companies": unresolved,
+                "mode": response_mode,
+            },
+            fallback_answer=fallback_answer,
         )
     if "general_context" in used_sources:
         citations.add("general_context")
@@ -1463,7 +1921,7 @@ def _answer_question(question: str, db: Session) -> QAResponse:
 
 
 @router.post("", response_model=QAResponse)
-def qa_answer(payload: QARequest, db: Session = Depends(get_db)):
+def qa_answer(payload: QARequest, db: Session = Depends(get_qa_db)):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")

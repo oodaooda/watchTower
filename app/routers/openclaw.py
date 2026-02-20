@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 import hashlib
 from app.core.config import settings
-from app.core.db import get_db
+from app.core.db import get_db, get_qa_db
 from app.core.schemas import QARequest, QAResponse
 from app.routers.qa import _answer_question
 from app.core.models import ApiKey
@@ -67,6 +67,7 @@ def openclaw_qa(
     request: Request,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    qa_db: Session = Depends(get_qa_db),
 ):
     _check_token(authorization, db)
     _check_ip(request)
@@ -74,4 +75,4 @@ def openclaw_qa(
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
-    return _answer_question(question, db)
+    return _answer_question(question, qa_db)

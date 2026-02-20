@@ -157,6 +157,32 @@ Execution order for Phase 4: `4A -> 4D -> 4B -> 4C` (resolver foundations first)
 
 ---
 
+## Phase 5 — Read-Only NL-to-SQL Querying (Schema-Aware QA)
+
+- [x] Add dedicated QA read-only DB connection (`QA_DATABASE_URL`)
+- [x] Add SQL mode runtime controls (`QA_SQL_ENABLED`, row/time limits)
+- [x] Build schema context loader (tables + columns + types) for SQL planning
+- [x] Add SQL planning layer (LLM proposes SQL using schema context)
+- [x] Add SQL validation guardrails (SELECT-only, allowlisted tables, single statement)
+- [x] Add execution sandbox (statement timeout + row limit)
+- [x] Add deterministic fallback to existing action pipeline when planning/validation fails
+- [x] Add SQL traceability in QA response (`queries`, SQL statement, rows/duration)
+- [x] Add OpenClaw-compatible news links contract (`news[]` and `data.news[]`)
+- [x] Create Postgres read-only role for QA (`watchtower_readonly`) and grant SELECT-only access
+
+**Phase 5 Tests**
+- [x] Unit: SQL validator rejects DDL/DML and unknown-table queries
+- [x] Unit: SQL helper functions (table extraction, LIMIT enforcement)
+- [x] Integration: factual metric prompt can be answered through guarded SQL path
+- [x] Integration: invalid SQL plan falls back to deterministic action path
+- [x] Manual: verify read-only user cannot mutate schema/data (`INSERT/UPDATE/DROP` denied)
+
+**Phase 5 Commit/Push Point**
+- [ ] Commit after Phase 5 tests pass
+- [ ] Push after regression check (`/qa`, `/api/v1/openclaw/qa`, Data Assistant UI)
+
+---
+
 ## Notes
 
 - Use `/api/v1` for new clients; legacy routes remain for compatibility.

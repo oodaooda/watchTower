@@ -9,6 +9,10 @@ from pydantic import Field
 class Settings(BaseSettings):
     # Core
     database_url: str
+    qa_database_url: str | None = Field(default=None, alias="QA_DATABASE_URL")
+    qa_sql_enabled: bool = Field(default=True, alias="QA_SQL_ENABLED")
+    qa_sql_row_limit: int = Field(default=100, alias="QA_SQL_ROW_LIMIT")
+    qa_sql_timeout_ms: int = Field(default=3000, alias="QA_SQL_TIMEOUT_MS")
     alpha_vantage_api_key: str | None = None
     sec_user_agent: str
     pharma_openai_api_key: str | None = Field(default=None, alias="PHARMA_OPENAI_API_KEY")
