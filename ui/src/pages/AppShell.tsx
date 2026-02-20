@@ -58,6 +58,12 @@ export default function AppShell() {
             Data Assistant
           </Link>
           <Link
+            to="/usage"
+            className="rounded-xl border border-zinc-700 px-3 py-1.5 hover:bg-zinc-900/40"
+          >
+            Usage
+          </Link>
+          <Link
             to="/settings"
             className="rounded-xl border border-zinc-700 px-3 py-1.5 hover:bg-zinc-900/40 inline-flex items-center gap-2"
           >

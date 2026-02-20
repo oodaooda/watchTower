@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.core.db import get_qa_db
 from app.core.models import Company, FinancialAnnual, PriceAnnual
 from app.core.schemas import QARequest, QAResponse
+from app.services.llm_usage import record_openai_usage
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 log = logging.getLogger("watchtower.qa")
@@ -280,9 +281,26 @@ def _parse_with_llm(question: str) -> Optional[Dict[str, Any]]:
             ],
             temperature=0.0,
         )
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=response,
+            success=True,
+            metadata={"router": "qa", "flow": "planner"},
+        )
         raw = response.choices[0].message.content or "{}"
         return json.loads(raw)
-    except Exception:
+    except Exception as exc:
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "qa", "flow": "planner"},
+        )
         return None
 
 
@@ -564,11 +582,28 @@ def _plan_sql_with_llm(question: str, schema_context: Dict[str, Any], companies:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             temperature=0.0,
         )
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=response,
+            success=True,
+            metadata={"router": "qa", "flow": "sql_planner"},
+        )
         raw = response.choices[0].message.content or "{}"
         payload = json.loads(raw)
         sql = payload.get("sql") if isinstance(payload, dict) else None
         return sql.strip() if isinstance(sql, str) else None
-    except Exception:
+    except Exception as exc:
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "qa", "flow": "sql_planner"},
+        )
         return None
 
 
@@ -809,8 +844,25 @@ def _synthesize_general_context(question: str) -> str:
             ],
             temperature=0.2,
         )
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=response,
+            success=True,
+            metadata={"router": "qa", "flow": "general_context"},
+        )
         raw = (response.choices[0].message.content or "").strip()
-    except Exception:
+    except Exception as exc:
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "qa", "flow": "general_context"},
+        )
         raw = ""
     cleaned = _strip_numeric_sentences(raw)
     return cleaned or "General context is available, but avoid numeric conclusions without grounded data."
@@ -1099,6 +1151,17 @@ def _build_plan(question: str) -> Dict[str, Any]:
             actions = [fallback]
     if not actions:
         actions = _default_actions(question, compare)
+    # Guardrail: broad "tell me about X" prompts should not collapse to snapshot-only
+    # due to parser drift; keep the richer deterministic action bundle.
+    q_lower = question.lower()
+    if (
+        ("tell me about" in q_lower or "what can you tell me about" in q_lower)
+        and "news_context" not in actions
+    ):
+        baseline = _default_actions(question, compare)
+        for action in baseline:
+            if action not in actions:
+                actions.append(action)
     # Root-cause guardrail: never let planner omit news context for price-move prompts.
     if _is_news_question(question.lower()):
         required = ["company_snapshot", "pe", "news_context"]
@@ -1453,8 +1516,25 @@ def _synthesize_answer(
             ],
             temperature=0.2,
         )
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=response,
+            success=True,
+            metadata={"router": "qa", "flow": "synthesis"},
+        )
         return (response.choices[0].message.content or "").strip() or "Summary is available in returned data payload."
-    except Exception:
+    except Exception as exc:
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "qa", "flow": "synthesis"},
+        )
         return "Summary is available in returned data payload."
 
 
@@ -1574,9 +1654,26 @@ def _render_answer_with_llm(
             ],
             temperature=0.2,
         )
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=response,
+            success=True,
+            metadata={"router": "qa", "flow": "render"},
+        )
         rendered = (response.choices[0].message.content or "").strip()
         return rendered or fallback_answer
-    except Exception:
+    except Exception as exc:
+        record_openai_usage(
+            endpoint="/qa",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "qa", "flow": "render"},
+        )
         return fallback_answer
 
 
@@ -1633,7 +1730,10 @@ def _answer_question(question: str, db: Session) -> QAResponse:
     years = int(plan.get("years") or 10)
     compare_mode = bool(plan.get("compare"))
 
-    if _should_try_sql_path(question, response_mode, compare_mode, actions):
+    can_execute_sql = hasattr(db, "execute")
+    allow_llm_render = can_execute_sql
+
+    if can_execute_sql and _should_try_sql_path(question, response_mode, compare_mode, actions):
         schema_context = _get_schema_context(db)
         sql_candidate = _plan_sql_with_llm(question, schema_context, companies)
         trace_sql: List[str] = []
@@ -1654,17 +1754,19 @@ def _answer_question(question: str, db: Session) -> QAResponse:
                             row_limit=int(settings.qa_sql_row_limit or 100),
                         )
                     fallback_answer = _synthesize_sql_answer(question, rows, sql_bounded)
-                    answer = _render_answer_with_llm(
-                        question=question,
-                        response_mode=response_mode,
-                        context={
-                            "sql": sql_bounded,
-                            "rows": rows,
-                            "resolved_companies": [c.ticker for c in companies],
-                            "unresolved_companies": unresolved,
-                        },
-                        fallback_answer=fallback_answer,
-                    )
+                    answer = fallback_answer
+                    if allow_llm_render:
+                        answer = _render_answer_with_llm(
+                            question=question,
+                            response_mode=response_mode,
+                            context={
+                                "sql": sql_bounded,
+                                "rows": rows,
+                                "resolved_companies": [c.ticker for c in companies],
+                                "unresolved_companies": unresolved,
+                            },
+                            fallback_answer=fallback_answer,
+                        )
                     news_items: List[Dict[str, Any]] = []
                     query_trace = [
                         _trace_entry(
@@ -1719,21 +1821,23 @@ def _answer_question(question: str, db: Session) -> QAResponse:
                 unresolved=unresolved or plan.get("companies", []),
                 mode=response_mode,
             )
-            answer = _render_answer_with_llm(
-                question=question,
-                response_mode=response_mode,
-                context={
-                    "plan": {
-                        "companies_requested": plan.get("companies", []),
-                        "companies_resolved": [],
+            answer = fallback_answer
+            if allow_llm_render:
+                answer = _render_answer_with_llm(
+                    question=question,
+                    response_mode=response_mode,
+                    context={
+                        "plan": {
+                            "companies_requested": plan.get("companies", []),
+                            "companies_resolved": [],
+                            "unresolved_companies": unresolved or plan.get("companies", []),
+                            "response_mode": response_mode,
+                        },
+                        "results": {},
                         "unresolved_companies": unresolved or plan.get("companies", []),
-                        "response_mode": response_mode,
                     },
-                    "results": {},
-                    "unresolved_companies": unresolved or plan.get("companies", []),
-                },
-                fallback_answer=fallback_answer,
-            )
+                    fallback_answer=fallback_answer,
+                )
             return QAResponse(
                 answer=answer,
                 citations=["general_context"] if "general_context" in used_sources else [],
@@ -1853,16 +1957,18 @@ def _answer_question(question: str, db: Session) -> QAResponse:
 
     if "news_context" in actions:
         fallback_answer = _synthesize_answer(question, companies, plan_out, results_by_company, unresolved)
-        answer = _render_answer_with_llm(
-            question=question,
-            response_mode=response_mode,
-            context={
-                "plan": plan_out,
-                "results": results_by_company,
-                "unresolved_companies": unresolved,
-            },
-            fallback_answer=fallback_answer,
-        )
+        answer = fallback_answer
+        if allow_llm_render:
+            answer = _render_answer_with_llm(
+                question=question,
+                response_mode=response_mode,
+                context={
+                    "plan": plan_out,
+                    "results": results_by_company,
+                    "unresolved_companies": unresolved,
+                },
+                fallback_answer=fallback_answer,
+            )
         used_sources = ["database"]
     else:
         fallback_answer, used_sources = _build_structured_non_news_answer(
@@ -1872,17 +1978,19 @@ def _answer_question(question: str, db: Session) -> QAResponse:
             unresolved=unresolved,
             mode=response_mode,
         )
-        answer = _render_answer_with_llm(
-            question=question,
-            response_mode=response_mode,
-            context={
-                "plan": plan_out,
-                "results": results_by_company,
-                "unresolved_companies": unresolved,
-                "mode": response_mode,
-            },
-            fallback_answer=fallback_answer,
-        )
+        answer = fallback_answer
+        if allow_llm_render:
+            answer = _render_answer_with_llm(
+                question=question,
+                response_mode=response_mode,
+                context={
+                    "plan": plan_out,
+                    "results": results_by_company,
+                    "unresolved_companies": unresolved,
+                    "mode": response_mode,
+                },
+                fallback_answer=fallback_answer,
+            )
     if "general_context" in used_sources:
         citations.add("general_context")
     news_items = _collect_news_items(results_by_company, max_items=5)

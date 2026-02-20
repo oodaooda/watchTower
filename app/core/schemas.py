@@ -402,3 +402,55 @@ class SettingsOut(BaseModel):
 
 class SettingsIn(BaseModel):
     openclaw_max_keys: int
+
+
+# ---------- Usage ----------
+class LLMModelPriceIn(BaseModel):
+    provider: str = "openai"
+    model: str
+    input_per_million: float = 0.0
+    output_per_million: float = 0.0
+    cache_read_per_million: float = 0.0
+    active: bool = True
+
+
+class LLMModelPriceOut(BaseModel):
+    id: int
+    provider: str
+    model: str
+    input_per_million: float
+    output_per_million: float
+    cache_read_per_million: float
+    active: bool
+    updated_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UsageBucketOut(BaseModel):
+    bucket: str
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cached_input_tokens: int
+    cost: float
+
+
+class UsageModelBreakdownOut(BaseModel):
+    provider: str
+    model: str
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cached_input_tokens: int
+    cost: float
+
+
+class UsageSummaryOut(BaseModel):
+    granularity: str
+    start: str
+    end: str
+    totals: UsageBucketOut
+    buckets: List[UsageBucketOut] = Field(default_factory=list)
+    by_model: List[UsageModelBreakdownOut] = Field(default_factory=list)

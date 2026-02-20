@@ -183,6 +183,34 @@ Execution order for Phase 4: `4A -> 4D -> 4B -> 4C` (resolver foundations first)
 
 ---
 
+## Phase 6 — LLM Usage & Cost Observability
+
+- [x] Add usage event table (`llm_usage_events`) for every LLM call (provider/api/model/tokens/errors).
+- [x] Add model pricing table (`llm_model_prices`) with per-1M token pricing.
+- [x] Instrument LLM call paths (`qa`, `pharma`, `modeling`) to persist usage in real time.
+- [x] Add secured usage API endpoints:
+- [x] `GET /usage/summary` (hour/day/week/month/year rollups + cost)
+- [x] `GET /usage/prices` and `PUT /usage/prices` (pricing management)
+- [x] Add UI `Usage` tab with:
+- [x] interval filters + lookback
+- [x] total KPI cards (cost/tokens/requests/cache)
+- [x] trend table + model breakdown
+- [x] pricing controls for per-model costs
+- [x] auto-refresh (near real time)
+
+**Phase 6 Tests**
+- [x] Alembic migration applies cleanly to head.
+- [x] Unit: usage extraction helper parses chat + responses token payloads.
+- [x] Unit: cost calculation matches configured per-model rates.
+- [x] Integration: `GET /usage/summary` returns non-empty buckets after QA calls.
+- [ ] Manual UI: Usage tab updates after sending Data Assistant questions.
+
+**Phase 6 Commit/Push Point**
+- [ ] Commit after Phase 6 tests pass.
+- [ ] Push after UI verification (Usage tab + pricing edit).
+
+---
+
 ## Notes
 
 - Use `/api/v1` for new clients; legacy routes remain for compatibility.

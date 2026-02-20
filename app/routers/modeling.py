@@ -25,6 +25,7 @@ from app.core.schemas import (
     ModelingScenarioOut,
 )
 from app.modeling.forecaster import Assumptions, KPI, generate_forecast, rollup_annual
+from app.services.llm_usage import record_openai_usage
 
 
 router = APIRouter(prefix="/modeling", tags=["modeling"])
@@ -338,14 +339,36 @@ def chat_with_modeling_ai(company_id: int, payload: ModelingChatRequest, db: Ses
         "history": payload.history,
     }
 
-    response = client.chat.completions.create(
-        model="gpt-4.1",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(prompt)},
-        ],
-        temperature=0.2,
-    )
+    response = None
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+            temperature=0.2,
+        )
+    except Exception as exc:
+        record_openai_usage(
+            endpoint=f"/modeling/{company_id}/chat",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "modeling"},
+        )
+        raise
+    else:
+        record_openai_usage(
+            endpoint=f"/modeling/{company_id}/chat",
+            api="chat_completions",
+            model="gpt-4.1",
+            response=response,
+            success=True,
+            metadata={"router": "modeling"},
+        )
 
     raw = response.choices[0].message.content or "{}"
     try:

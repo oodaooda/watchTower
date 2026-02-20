@@ -264,6 +264,43 @@ class ApiKey(Base):
     )
 
 
+class LLMUsageEvent(Base):
+    __tablename__ = "llm_usage_events"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    endpoint = Column(String, nullable=False)
+    provider = Column(String, nullable=False, server_default="openai")
+    api = Column(String, nullable=False, server_default="chat_completions")
+    model = Column(String, nullable=False)
+    input_tokens = Column(Integer, nullable=False, server_default="0")
+    output_tokens = Column(Integer, nullable=False, server_default="0")
+    total_tokens = Column(Integer, nullable=False, server_default="0")
+    cached_input_tokens = Column(Integer, nullable=False, server_default="0")
+    success = Column(Boolean, nullable=False, server_default="true")
+    error = Column(String, nullable=True)
+    metadata_json = Column(String, nullable=True)
+    raw_usage_json = Column(String, nullable=True)
+
+
+class LLMModelPrice(Base):
+    __tablename__ = "llm_model_prices"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String, nullable=False, server_default="openai")
+    model = Column(String, nullable=False)
+    input_per_million = Column(Numeric(14, 6), nullable=False, server_default="0")
+    output_per_million = Column(Numeric(14, 6), nullable=False, server_default="0")
+    cache_read_per_million = Column(Numeric(14, 6), nullable=False, server_default="0")
+    active = Column(Boolean, nullable=False, server_default="true")
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("provider", "model", name="uq_llm_model_prices_provider_model"),
+        Index("ix_llm_model_prices_provider_model", "provider", "model"),
+    )
+
+
 class ModelingAssumption(Base):
     __tablename__ = "modeling_assumptions"
 

@@ -382,6 +382,97 @@ export async function revokeOpenclawKey(token: string, id: number) {
   return res.json();
 }
 
+// -------- Usage --------
+
+export type UsageBucket = {
+  bucket: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cached_input_tokens: number;
+  cost: number;
+};
+
+export type UsageModelBreakdown = {
+  provider: string;
+  model: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cached_input_tokens: number;
+  cost: number;
+};
+
+export type UsageSummary = {
+  granularity: "hour" | "day" | "week" | "month" | "year";
+  start: string;
+  end: string;
+  totals: UsageBucket;
+  buckets: UsageBucket[];
+  by_model: UsageModelBreakdown[];
+};
+
+export type LLMModelPrice = {
+  id: number;
+  provider: string;
+  model: string;
+  input_per_million: number;
+  output_per_million: number;
+  cache_read_per_million: number;
+  active: boolean;
+  updated_at?: string | null;
+};
+
+export type LLMModelPriceIn = {
+  provider: string;
+  model: string;
+  input_per_million: number;
+  output_per_million: number;
+  cache_read_per_million: number;
+  active: boolean;
+};
+
+export async function fetchUsageSummary(
+  token: string,
+  params: {
+    granularity: "hour" | "day" | "week" | "month" | "year";
+    lookback?: number;
+    model?: string;
+    provider?: string;
+  }
+): Promise<UsageSummary> {
+  const q = new URLSearchParams();
+  q.set("granularity", params.granularity);
+  if (params.lookback != null) q.set("lookback", String(params.lookback));
+  if (params.model) q.set("model", params.model);
+  if (params.provider) q.set("provider", params.provider);
+  const res = await fetch(`${API_BASE}/usage/summary?${q.toString()}`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`usage/summary ${res.status}`);
+  return res.json();
+}
+
+export async function fetchUsagePrices(token: string): Promise<LLMModelPrice[]> {
+  const res = await fetch(`${API_BASE}/usage/prices`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`usage/prices ${res.status}`);
+  return res.json();
+}
+
+export async function upsertUsagePrice(token: string, payload: LLMModelPriceIn): Promise<LLMModelPrice> {
+  const res = await fetch(`${API_BASE}/usage/prices`, {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`usage/prices ${res.status}`);
+  return res.json();
+}
+
 // -------- Pharma endpoints --------
 
 export type PharmaCompanyListItem = {

@@ -24,6 +24,7 @@ from app.services.clinical_trials import (
     status_category as classify_status,
 )
 from app.services.pharma_refresh import refresh_company
+from app.services.llm_usage import record_openai_usage
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/pharma", tags=["pharma"])
@@ -525,8 +526,25 @@ def _generate_analysis(company: Company, drugs: List[Dict[str, object]]) -> Opti
             text={"verbosity": "medium"},
             max_output_tokens=600,
         )
+        record_openai_usage(
+            endpoint=f"/pharma/{company.ticker}",
+            api="responses",
+            model="gpt-5",
+            response=completion,
+            success=True,
+            metadata={"router": "pharma", "flow": "analysis"},
+        )
         return completion.output_text
-    except Exception:
+    except Exception as exc:
+        record_openai_usage(
+            endpoint=f"/pharma/{company.ticker}",
+            api="responses",
+            model="gpt-5",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "pharma", "flow": "analysis"},
+        )
         return None
 
 
@@ -747,6 +765,23 @@ def pharma_chat(payload: ChatRequest, db: Session = Depends(get_db)):
             text={"verbosity": "medium"},
             max_output_tokens=600,
         )
+        record_openai_usage(
+            endpoint="/pharma/chat",
+            api="responses",
+            model="gpt-5",
+            response=completion,
+            success=True,
+            metadata={"router": "pharma", "flow": "chat"},
+        )
         return {"response": completion.output_text}
     except Exception as exc:
+        record_openai_usage(
+            endpoint="/pharma/chat",
+            api="responses",
+            model="gpt-5",
+            response=None,
+            success=False,
+            error=type(exc).__name__,
+            metadata={"router": "pharma", "flow": "chat"},
+        )
         raise HTTPException(status_code=500, detail=f"Chat generation failed: {exc}") from exc
