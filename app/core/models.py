@@ -264,6 +264,69 @@ class ApiKey(Base):
     )
 
 
+class QAThreadContext(Base):
+    __tablename__ = "qa_thread_context"
+
+    thread_id = Column(String, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticker = Column(String, nullable=False, index=True)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_qa_thread_context_updated_at", "updated_at"),
+    )
+
+
+class EarningsCallTranscript(Base):
+    __tablename__ = "earnings_call_transcripts"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticker = Column(String, nullable=False, index=True)
+    fiscal_year = Column(Integer, nullable=False, index=True)
+    fiscal_quarter = Column(Integer, nullable=False, index=True)
+    call_date = Column(Date, nullable=True)
+    source_provider = Column(String, nullable=False, server_default="alpha_vantage")
+    source_url = Column(String, nullable=True)
+    source_doc_id = Column(String, nullable=True)
+    content_hash = Column(String, nullable=False)
+    language = Column(String, nullable=False, server_default="en")
+    storage_mode = Column(String, nullable=False, server_default="restricted")
+    ingested_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "fiscal_year",
+            "fiscal_quarter",
+            "source_provider",
+            name="uq_ect_company_period_provider",
+        ),
+        Index("ix_ect_company_period", "company_id", "fiscal_year", "fiscal_quarter"),
+        Index("ix_ect_ticker_period", "ticker", "fiscal_year", "fiscal_quarter"),
+    )
+
+
+class EarningsCallTranscriptSegment(Base):
+    __tablename__ = "earnings_call_transcript_segments"
+
+    id = Column(Integer, primary_key=True)
+    transcript_id = Column(
+        Integer, ForeignKey("earnings_call_transcripts.id", ondelete="CASCADE"), nullable=False
+    )
+    segment_index = Column(Integer, nullable=False)
+    speaker = Column(String, nullable=True)
+    section = Column(String, nullable=True)
+    text = Column(String, nullable=False)
+    token_count = Column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        UniqueConstraint("transcript_id", "segment_index", name="uq_ect_segment_idx"),
+        Index("ix_ect_segments_transcript", "transcript_id"),
+    )
+
+
 class LLMUsageEvent(Base):
     __tablename__ = "llm_usage_events"
 

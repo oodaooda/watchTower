@@ -2,7 +2,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import BackButton from "../components/BackButton";
 import type { ReactNode } from "react";
-import { CompanyNewsItem, fetchCompanyNews } from "../lib/api";
+import {
+  CompanyNewsItem,
+  EarningsTranscript,
+  EarningsTranscriptDetail,
+  fetchCompanyNews,
+  fetchCompanyTranscripts,
+  fetchTranscriptDetail,
+} from "../lib/api";
 import {
   ResponsiveContainer,
   LineChart,
@@ -258,6 +265,13 @@ export default function CompanyProfilePage() {
   const [newsItems, setNewsItems] = useState<CompanyNewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
+  const [transcripts, setTranscripts] = useState<EarningsTranscript[]>([]);
+  const [transcriptsLoading, setTranscriptsLoading] = useState(false);
+  const [transcriptsError, setTranscriptsError] = useState<string | null>(null);
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<number | null>(null);
+  const [transcriptDetail, setTranscriptDetail] = useState<EarningsTranscriptDetail | null>(null);
+  const [transcriptDetailLoading, setTranscriptDetailLoading] = useState(false);
+  const [transcriptDetailError, setTranscriptDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     setSearchTicker(identifier ?? "");
@@ -299,6 +313,68 @@ export default function CompanyProfilePage() {
       cancelled = true;
     };
   }, [identifier]);
+
+  useEffect(() => {
+    const companyId = profile?.company?.id;
+    if (!companyId) {
+      setTranscripts([]);
+      setSelectedTranscriptId(null);
+      setTranscriptDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setTranscriptsLoading(true);
+    setTranscriptsError(null);
+
+    fetchCompanyTranscripts(companyId)
+      .then((rows) => {
+        if (cancelled) return;
+        setTranscripts(rows ?? []);
+        const nextId = rows && rows.length > 0 ? rows[0].id : null;
+        setSelectedTranscriptId(nextId);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setTranscriptsError(err.message || "Unable to load transcripts.");
+        setTranscripts([]);
+        setSelectedTranscriptId(null);
+      })
+      .finally(() => {
+        if (!cancelled) setTranscriptsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.company?.id]);
+
+  useEffect(() => {
+    if (!selectedTranscriptId) {
+      setTranscriptDetail(null);
+      setTranscriptDetailError(null);
+      return;
+    }
+    let cancelled = false;
+    setTranscriptDetailLoading(true);
+    setTranscriptDetailError(null);
+
+    fetchTranscriptDetail(selectedTranscriptId)
+      .then((detail) => {
+        if (!cancelled) setTranscriptDetail(detail);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setTranscriptDetailError(err.message || "Unable to load transcript detail.");
+        setTranscriptDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setTranscriptDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTranscriptId]);
 
   useEffect(() => {
     if (!identifier) return;
@@ -892,6 +968,16 @@ export default function CompanyProfilePage() {
 
           <div className="grid gap-4">
             <NewsCard items={newsItems} loading={newsLoading} error={newsError} />
+            <TranscriptCard
+              items={transcripts}
+              loading={transcriptsLoading}
+              error={transcriptsError}
+              selectedId={selectedTranscriptId}
+              onSelect={setSelectedTranscriptId}
+              detail={transcriptDetail}
+              detailLoading={transcriptDetailLoading}
+              detailError={transcriptDetailError}
+            />
           </div>
         </>
       ) : (
@@ -956,6 +1042,104 @@ function NewsCard({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function TranscriptCard({
+  items,
+  loading,
+  error,
+  selectedId,
+  onSelect,
+  detail,
+  detailLoading,
+  detailError,
+}: {
+  items: EarningsTranscript[];
+  loading: boolean;
+  error: string | null;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+  detail: EarningsTranscriptDetail | null;
+  detailLoading: boolean;
+  detailError: string | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
+      <div className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
+        Earnings Call Transcripts
+      </div>
+      {loading ? (
+        <div className="text-xs text-zinc-500">Loading transcripts…</div>
+      ) : error ? (
+        <div className="text-xs text-red-500">{error}</div>
+      ) : items.length === 0 ? (
+        <div className="text-xs text-zinc-500">
+          No transcripts cached yet. Use Data Assistant transcript questions or sync endpoint to ingest.
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {items.map((t) => {
+              const active = selectedId === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onSelect(t.id)}
+                  className={
+                    active
+                      ? "rounded-lg border border-sky-600 bg-sky-600/20 px-2 py-1 text-xs font-semibold text-sky-300"
+                      : "rounded-lg border border-zinc-700 bg-zinc-900/40 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800/60"
+                  }
+                >
+                  {`${t.fiscal_year} Q${t.fiscal_quarter}`}
+                </button>
+              );
+            })}
+          </div>
+
+          {detailLoading ? (
+            <div className="text-xs text-zinc-500">Loading transcript detail…</div>
+          ) : detailError ? (
+            <div className="text-xs text-red-500">{detailError}</div>
+          ) : detail ? (
+            <div className="space-y-2">
+              <div className="text-xs text-zinc-400">
+                {detail.transcript.ticker} • FY {detail.transcript.fiscal_year} Q{detail.transcript.fiscal_quarter}
+                {detail.transcript.call_date ? ` • ${detail.transcript.call_date}` : ""}
+                {detail.transcript.source_provider ? ` • ${detail.transcript.source_provider}` : ""}
+              </div>
+              {detail.transcript.source_url ? (
+                <a
+                  href={detail.transcript.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs underline text-zinc-400 hover:opacity-80"
+                >
+                  Open source
+                </a>
+              ) : null}
+              <div className="max-h-96 overflow-auto space-y-2 pr-1">
+                {(detail.segments || []).slice(0, 20).map((seg) => (
+                  <div
+                    key={seg.id}
+                    className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs"
+                  >
+                    <div className="text-zinc-400 mb-1">
+                      #{seg.segment_index}
+                      {seg.section ? ` • ${seg.section}` : ""}
+                      {seg.speaker ? ` • ${seg.speaker}` : ""}
+                    </div>
+                    <div className="text-zinc-200 whitespace-pre-wrap">{seg.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

@@ -5,7 +5,7 @@ These map ORM rows to API-friendly shapes.
 from __future__ import annotations
 
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field
 
 # ---------- Companies ----------
@@ -354,6 +354,8 @@ class ModelingChatResponse(BaseModel):
 # ---------- QA (Data Assistant) ----------
 class QARequest(BaseModel):
     question: str
+    thread_id: Optional[str] = None
+    context_company: Optional[str] = None
 
 
 class QANewsItem(BaseModel):
@@ -402,6 +404,47 @@ class SettingsOut(BaseModel):
 
 class SettingsIn(BaseModel):
     openclaw_max_keys: int
+
+
+# ---------- Earnings Call Transcripts ----------
+class TranscriptSyncIn(BaseModel):
+    ticker: str
+    fiscal_year: int
+    fiscal_quarter: int
+
+
+class EarningsTranscriptOut(BaseModel):
+    id: int
+    company_id: int
+    ticker: str
+    fiscal_year: int
+    fiscal_quarter: int
+    call_date: Optional[datetime | date] = None
+    source_provider: str
+    source_url: Optional[str] = None
+    source_doc_id: Optional[str] = None
+    language: str
+    storage_mode: str
+    ingested_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    segment_count: int = 0
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EarningsTranscriptSegmentOut(BaseModel):
+    id: int
+    transcript_id: int
+    segment_index: int
+    speaker: Optional[str] = None
+    section: Optional[str] = None
+    text: str
+    token_count: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EarningsTranscriptDetailOut(BaseModel):
+    transcript: EarningsTranscriptOut
+    segments: List[EarningsTranscriptSegmentOut] = Field(default_factory=list)
 
 
 # ---------- Usage ----------

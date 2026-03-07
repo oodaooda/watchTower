@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     openclaw_allowed_ips: str | None = Field(default=None, alias="OPENCLAW_ALLOWED_IPS")
     openclaw_rate_limit: int = Field(60, alias="OPENCLAW_RATE_LIMIT")
     admin_settings_token: str | None = Field(default=None, alias="SETTINGS_ADMIN_TOKEN")
+    transcripts_storage_mode: str = Field("restricted", alias="TRANSCRIPTS_STORAGE_MODE")
+    transcripts_excerpt_char_limit: int = Field(12000, alias="TRANSCRIPTS_EXCERPT_CHAR_LIMIT")
+    transcripts_segment_char_limit: int = Field(800, alias="TRANSCRIPTS_SEGMENT_CHAR_LIMIT")
 
     class Config:
         env_file = ".env"            # <- load from repo root

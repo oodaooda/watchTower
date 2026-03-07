@@ -22,7 +22,14 @@ except Exception:  # pragma: no cover - optional dependency in some local test e
 
 from app.core.config import settings
 from app.core.db import get_qa_db
-from app.core.models import Company, FinancialAnnual, PriceAnnual
+from app.core.models import (
+    Company,
+    EarningsCallTranscript,
+    EarningsCallTranscriptSegment,
+    FinancialAnnual,
+    PriceAnnual,
+    QAThreadContext,
+)
 from app.core.schemas import QARequest, QAResponse
 from app.services.llm_usage import record_openai_usage
 
@@ -37,6 +44,7 @@ ALLOWED_ACTIONS = {
     "eps_history",
     "margin_trend",
     "news_context",
+    "transcript_context",
 }
 ALLOWED_RESPONSE_MODES = {"grounded", "general", "hybrid"}
 TRACE_PARAM_ALLOWLIST = {
@@ -112,7 +120,7 @@ def _extract_ticker(question: str) -> Optional[str]:
         "YEARS",
         "YEAR",
     }
-    candidates = [c for c in re.findall(r"\b[A-Z]{2,5}\b", question.upper()) if c not in stop]
+    candidates = [c for c in re.findall(r"\b[A-Z]{3,5}\b", question.upper()) if c not in stop]
     return candidates[0] if candidates else None
 
 
@@ -126,7 +134,7 @@ def _extract_tickers(question: str) -> List[str]:
     for m in re.finditer(r"\bticker\s+([A-Za-z]{1,5})\b", question, flags=re.IGNORECASE):
         explicit.append(m.group(1).upper())
     # Contextual cue for lowercase ticker mention in natural prose (e.g. "news on qcls").
-    for m in re.finditer(r"\b(?:about|on|for)\s+([A-Za-z]{1,5})\b", question, flags=re.IGNORECASE):
+    for m in re.finditer(r"\b(?:about|on|for)\s+([A-Za-z]{3,5})\b", question, flags=re.IGNORECASE):
         explicit.append(m.group(1).upper())
 
     stop = {
@@ -155,7 +163,7 @@ def _extract_tickers(question: str) -> List[str]:
     }
     # Case-aware extraction: only include naturally uppercase tokens as ticker candidates.
     # This prevents normal words like "on" / "have" from becoming fake tickers.
-    uppercase_tokens = [tok for tok in re.findall(r"\b[A-Za-z]{2,5}\b", question) if tok.isupper()]
+    uppercase_tokens = [tok for tok in re.findall(r"\b[A-Za-z]{3,5}\b", question) if tok.isupper()]
     candidates = [c.upper() for c in uppercase_tokens if c.upper() not in stop]
     candidates.extend([c for c in explicit if c not in stop])
     dedup: List[str] = []
@@ -268,7 +276,7 @@ def _parse_with_llm(question: str) -> Optional[Dict[str, Any]]:
         return None
     system = (
         "You are a financial query planner. Return strict JSON only. "
-        "Allowed actions: company_snapshot, pe, earnings_history, revenue_history, eps_history, margin_trend. "
+        "Allowed actions: company_snapshot, pe, earnings_history, revenue_history, eps_history, margin_trend, transcript_context. "
         "Return keys: companies (array of ticker/name strings), ticker (optional), company_name (optional), "
         "years (optional), actions (array), compare (bool), response_mode (grounded|general|hybrid)."
     )
@@ -309,6 +317,32 @@ def _resolve_company(db: Session, ticker: str) -> Optional[Company]:
         return None
     stmt = select(Company).where(func.upper(Company.ticker) == ticker.upper())
     return db.execute(stmt).scalar_one_or_none()
+
+
+def _load_thread_context_company(db: Session, thread_id: Optional[str]) -> Optional[Company]:
+    tid = (thread_id or "").strip()
+    if not tid or not hasattr(db, "execute"):
+        return None
+    ctx = db.get(QAThreadContext, tid)
+    if not ctx or not ctx.company_id:
+        return None
+    return db.get(Company, int(ctx.company_id))
+
+
+def _save_thread_context_company(db: Session, thread_id: Optional[str], company: Optional[Company]) -> None:
+    tid = (thread_id or "").strip()
+    if not tid or not company or not hasattr(db, "execute"):
+        return
+    existing = db.get(QAThreadContext, tid)
+    if existing:
+        existing.company_id = company.id
+        existing.ticker = company.ticker
+    else:
+        db.add(QAThreadContext(thread_id=tid, company_id=company.id, ticker=company.ticker))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def _latest_pe(db: Session, company_id: int) -> Tuple[Optional[float], Optional[int]]:
@@ -393,6 +427,8 @@ def _trace_entry(sql_template: str, params: Dict[str, Any], rows: int, duration_
 
 def _default_actions(question: str, compare: bool) -> List[str]:
     q = question.lower()
+    if _is_transcript_question(q):
+        return ["company_snapshot", "transcript_context"]
     if _is_news_question(q):
         return ["company_snapshot", "pe", "news_context"]
     if compare:
@@ -410,6 +446,74 @@ def _default_actions(question: str, compare: bool) -> List[str]:
 
 def _is_news_question(question_lower: str) -> bool:
     return any(k in question_lower for k in ["why", "down", "up", "last week", "news", "headline", "sentiment"])
+
+
+def _is_transcript_question(question_lower: str) -> bool:
+    return any(
+        k in question_lower
+        for k in [
+            "transcript",
+            "earnings call",
+            "prepared remarks",
+            "on the call",
+            "management said",
+            "q&a",
+            "question and answer",
+        ]
+    )
+
+
+def _is_implicit_company_followup(question: str) -> bool:
+    q = f" {(question or '').strip().lower()} "
+    if not q.strip():
+        return False
+    if _extract_tickers(question):
+        return False
+    followup_markers = (
+        " their ",
+        " its ",
+        " it ",
+        " this company ",
+        " that company ",
+        " last earnings call ",
+        " latest earnings call ",
+        " last call ",
+        " latest call ",
+    )
+    return any(marker in q for marker in followup_markers)
+
+
+def _extract_transcript_keywords(question: str) -> List[str]:
+    q = re.sub(r"[^a-z0-9\\s]", " ", (question or "").lower())
+    tokens = [t for t in q.split() if len(t) >= 4]
+    stop = {
+        "what",
+        "when",
+        "where",
+        "which",
+        "about",
+        "latest",
+        "transcript",
+        "earnings",
+        "call",
+        "said",
+        "from",
+        "this",
+        "that",
+        "with",
+        "have",
+        "has",
+        "were",
+        "they",
+        "them",
+    }
+    out: List[str] = []
+    for t in tokens:
+        if t in stop:
+            continue
+        if t not in out:
+            out.append(t)
+    return out[:8]
 
 
 def _is_conceptual_question(question: str) -> bool:
@@ -488,6 +592,8 @@ def _should_try_sql_path(question: str, response_mode: str, compare_mode: bool, 
     if compare_mode:
         return False
     if "news_context" in actions:
+        return False
+    if "transcript_context" in actions:
         return False
     q = (question or "").lower()
     sql_triggers = (
@@ -879,6 +985,7 @@ def _build_structured_non_news_answer(
     gaps: List[str] = []
     used_sources: List[str] = []
     requested_fields = _requested_metric_fields(question)
+    transcript_question = _is_transcript_question((question or "").lower())
 
     if companies:
         used_sources.append("database")
@@ -886,6 +993,7 @@ def _build_structured_non_news_answer(
             company_payload = payload_by_company.get(company.ticker, {}) or {}
             snap = company_payload.get("company_snapshot", {}) or {}
             pe_payload = company_payload.get("pe", {}) or {}
+            transcript_payload = company_payload.get("transcript_context", {}) or {}
             latest_fy = snap.get("latest_fiscal_year")
             revenue = snap.get("revenue")
             net_income = snap.get("net_income")
@@ -926,6 +1034,21 @@ def _build_structured_non_news_answer(
                     row.append(f"net income FY {latest_fy}: ${net_income/1e9:.2f}B")
                 if isinstance(pe_ttm, (int, float)):
                     row.append(f"P/E {pe_ttm:.2f}")
+            if transcript_question:
+                if transcript_payload.get("available"):
+                    tfy = transcript_payload.get("fiscal_year")
+                    tfq = transcript_payload.get("fiscal_quarter")
+                    row.append(f"transcript available: FY {tfy} Q{tfq}")
+                    segments = transcript_payload.get("segments") or []
+                    if segments and isinstance(segments[0], dict):
+                        first_text = (segments[0].get("text") or "").strip()
+                        if first_text:
+                            short = first_text[:140]
+                            if len(first_text) > 140:
+                                short += "..."
+                            row.append(f"transcript snippet: {short}")
+                else:
+                    gaps.append(f"{company.ticker}: transcript is unavailable for cached periods.")
             data_lines.append("- " + " | ".join(row))
     else:
         data_lines.append("- No company-specific rows were resolved from the database for this prompt.")
@@ -1441,6 +1564,110 @@ def _execute_action(
             queries,
         )
 
+    if action == "transcript_context":
+        started = time.perf_counter()
+        transcript = db.execute(
+            select(EarningsCallTranscript)
+            .where(EarningsCallTranscript.company_id == company.id)
+            .order_by(
+                EarningsCallTranscript.fiscal_year.desc(),
+                EarningsCallTranscript.fiscal_quarter.desc(),
+                EarningsCallTranscript.ingested_at.desc(),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        queries.append(
+            _trace_entry(
+                "SELECT * FROM earnings_call_transcripts WHERE company_id=:company_id ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1",
+                {"company_id": company.id, "limit": 1},
+                1 if transcript else 0,
+                (time.perf_counter() - started) * 1000,
+            )
+        )
+        citations.append("earnings_call_transcripts")
+        if not transcript:
+            return (
+                {
+                    "ticker": company.ticker,
+                    "available": False,
+                    "message": "No transcript is currently cached for this company.",
+                },
+                citations,
+                "No cached earnings transcript found.",
+                queries,
+            )
+
+        seg_started = time.perf_counter()
+        segments = db.execute(
+            select(EarningsCallTranscriptSegment)
+            .where(EarningsCallTranscriptSegment.transcript_id == transcript.id)
+            .order_by(EarningsCallTranscriptSegment.segment_index.asc())
+        ).scalars().all()
+        queries.append(
+            _trace_entry(
+                "SELECT segment_index, speaker, section, text FROM earnings_call_transcript_segments WHERE transcript_id=:transcript_id ORDER BY segment_index ASC",
+                {"transcript_id": transcript.id},
+                len(segments),
+                (time.perf_counter() - seg_started) * 1000,
+            )
+        )
+        citations.append("earnings_call_transcript_segments")
+
+        keywords = _extract_transcript_keywords(question)
+        ranked: List[Tuple[int, EarningsCallTranscriptSegment]] = []
+        for seg in segments:
+            text_lower = (seg.text or "").lower()
+            score = 0
+            for kw in keywords:
+                if kw in text_lower:
+                    score += 1
+            ranked.append((score, seg))
+        ranked.sort(key=lambda x: (x[0], -x[1].segment_index), reverse=True)
+
+        top_segments: List[Dict[str, Any]] = []
+        for score, seg in ranked[:6]:
+            if score <= 0 and keywords:
+                continue
+            top_segments.append(
+                {
+                    "segment_index": seg.segment_index,
+                    "speaker": seg.speaker,
+                    "section": seg.section,
+                    "text": seg.text,
+                    "score": score,
+                }
+            )
+        if not top_segments:
+            for seg in segments[:3]:
+                top_segments.append(
+                    {
+                        "segment_index": seg.segment_index,
+                        "speaker": seg.speaker,
+                        "section": seg.section,
+                        "text": seg.text,
+                        "score": 0,
+                    }
+                )
+
+        if transcript.source_url:
+            citations.append(transcript.source_url)
+        return (
+            {
+                "ticker": company.ticker,
+                "available": True,
+                "transcript_id": transcript.id,
+                "fiscal_year": transcript.fiscal_year,
+                "fiscal_quarter": transcript.fiscal_quarter,
+                "call_date": transcript.call_date.isoformat() if transcript.call_date else None,
+                "source_provider": transcript.source_provider,
+                "source_url": transcript.source_url,
+                "segments": top_segments,
+            },
+            citations,
+            f"Retrieved cached transcript context (FY {transcript.fiscal_year} Q{transcript.fiscal_quarter}).",
+            queries,
+        )
+
     # default: earnings history
     started = time.perf_counter()
     history = _history(db, company.id, "net_income", years)
@@ -1722,13 +1949,57 @@ def _collect_news_items(results_by_company: Dict[str, Any], max_items: int = 5) 
     return out
 
 
-def _answer_question(question: str, db: Session) -> QAResponse:
+def _answer_question(
+    question: str,
+    db: Session,
+    thread_id: Optional[str] = None,
+    context_company: Optional[str] = None,
+) -> QAResponse:
     plan = _build_plan(question)
     response_mode = plan.get("response_mode", "grounded")
     companies, unresolved, resolver_diagnostics = _resolve_companies_from_plan(db, question, plan)
     actions = [a for a in plan.get("actions", []) if a in ALLOWED_ACTIONS]
     years = int(plan.get("years") or 10)
     compare_mode = bool(plan.get("compare"))
+    used_context_company = False
+    context_source: Optional[str] = None
+    context_candidate: Optional[str] = None
+
+    if isinstance(context_company, str) and context_company.strip():
+        context_candidate = context_company.strip()
+        context_source = "request"
+    else:
+        thread_company = _load_thread_context_company(db, thread_id)
+        if thread_company:
+            context_candidate = thread_company.ticker
+            context_source = "thread"
+
+    if (
+        not companies
+        and context_candidate
+        and (
+            "transcript_context" in actions
+            or _is_implicit_company_followup(question)
+            or not plan.get("companies")
+        )
+    ):
+        fallback_company, confidence, reason = _resolve_company_candidate(
+            db, question, context_candidate
+        )
+        if fallback_company and confidence >= RESOLVER_AUTO_RESOLVE_MIN_CONFIDENCE:
+            companies = [fallback_company]
+            unresolved = []
+            used_context_company = True
+            resolver_diagnostics.append(
+                {
+                    "candidate": context_candidate,
+                    "resolved_ticker": fallback_company.ticker,
+                    "resolved_name": fallback_company.name,
+                    "confidence": confidence,
+                    "reason": f"context_fallback:{context_source}:{reason}",
+                    "decision": "resolved",
+                }
+            )
 
     can_execute_sql = hasattr(db, "execute")
     allow_llm_render = can_execute_sql
@@ -1776,6 +2047,8 @@ def _answer_question(question: str, db: Session) -> QAResponse:
                             duration_ms,
                         )
                     ]
+                    if companies:
+                        _save_thread_context_company(db, thread_id, companies[0])
                     return QAResponse(
                         answer=answer,
                         citations=sorted(list(_extract_tables_from_sql(sql_bounded))),
@@ -1906,6 +2179,8 @@ def _answer_question(question: str, db: Session) -> QAResponse:
         f"Planner companies resolved: {', '.join([c.ticker for c in companies])}.",
         f"Planner actions: {', '.join(actions)}.",
     ]
+    if used_context_company:
+        trace.append(f"Applied context company fallback ({context_source}): {context_candidate}.")
     if 'trace_sql' in locals():
         trace.extend(trace_sql)
     if unresolved:
@@ -2008,6 +2283,8 @@ def _answer_question(question: str, db: Session) -> QAResponse:
             "compare": bool(plan.get("compare")),
         },
     )
+    if companies:
+        _save_thread_context_company(db, thread_id, companies[0])
     return QAResponse(
         answer=answer,
         citations=sorted(citations),
@@ -2033,4 +2310,9 @@ def qa_answer(payload: QARequest, db: Session = Depends(get_qa_db)):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
-    return _answer_question(question, db)
+    return _answer_question(
+        question,
+        db,
+        thread_id=payload.thread_id,
+        context_company=payload.context_company,
+    )

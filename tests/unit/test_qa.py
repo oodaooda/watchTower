@@ -18,8 +18,17 @@ from app.routers.qa import (
     _extract_tables_from_sql,
     _should_use_quarterly_fallback,
     _synthesize_sql_answer,
+    _is_transcript_question,
+    _is_implicit_company_followup,
+    _build_structured_non_news_answer,
+    _execute_action,
 )
 from types import SimpleNamespace
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from app.core.db import Base
+from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment
 
 
 def test_extract_ticker_skips_common_words():
@@ -152,6 +161,103 @@ def test_build_plan_news_question_includes_news_context():
     assert "WEEK" not in [c.upper() for c in plan["companies"]]
 
 
+def test_is_transcript_question_detects_transcript_prompt():
+    assert _is_transcript_question("what did management say on the earnings call transcript") is True
+
+
+def test_is_implicit_company_followup_detects_pronoun_prompt():
+    assert _is_implicit_company_followup("Do you have access to their last earnings call?") is True
+    assert _is_implicit_company_followup("Do you have access to AAPL last earnings call?") is False
+
+
+def test_build_plan_transcript_prompt_prefers_transcript_action():
+    plan = _build_plan("what did management say on the earnings call for nvda")
+    assert "transcript_context" in plan["actions"]
+
+
+def test_transcript_question_reports_gap_when_transcript_unavailable():
+    company = SimpleNamespace(ticker="NVDA", name="NVIDIA Corporation")
+    answer, sources = _build_structured_non_news_answer(
+        question="What did management say on the earnings call transcript for NVDA?",
+        companies=[company],
+        payload_by_company={"NVDA": {"company_snapshot": {}, "transcript_context": {"available": False}}},
+        unresolved=[],
+        mode="grounded",
+    )
+    assert "transcript is unavailable" in answer
+    assert "database" in sources
+
+
+def test_execute_action_transcript_context_returns_citations_and_segments():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        company = Company(ticker="NVDA", name="NVIDIA Corporation")
+        db.add(company)
+        db.commit()
+        db.refresh(company)
+
+        transcript = EarningsCallTranscript(
+            company_id=company.id,
+            ticker="NVDA",
+            fiscal_year=2026,
+            fiscal_quarter=1,
+            source_provider="alpha_vantage",
+            source_url="https://example.com/nvda-transcript",
+            source_doc_id="NVDA-2026Q1",
+            content_hash="abc",
+            language="en",
+            storage_mode="restricted",
+        )
+        db.add(transcript)
+        db.flush()
+        db.add_all(
+            [
+                EarningsCallTranscriptSegment(
+                    transcript_id=transcript.id,
+                    segment_index=0,
+                    speaker="CEO",
+                    section="prepared_remarks",
+                    text="AI demand accelerated significantly across regions.",
+                    token_count=7,
+                ),
+                EarningsCallTranscriptSegment(
+                    transcript_id=transcript.id,
+                    segment_index=1,
+                    speaker="CFO",
+                    section="q_and_a",
+                    text="Gross margin expansion was driven by mix.",
+                    token_count=8,
+                ),
+            ]
+        )
+        db.commit()
+
+        result, citations, trace, queries = _execute_action(
+            db=db,
+            company=company,
+            action="transcript_context",
+            years=10,
+            question="what did management say about demand and margin in the transcript?",
+        )
+        assert result["available"] is True
+        assert result["fiscal_year"] == 2026
+        assert isinstance(result["segments"], list) and len(result["segments"]) >= 1
+        assert result["segments"][0]["segment_index"] == 0
+        assert "earnings_call_transcripts" in citations
+        assert "earnings_call_transcript_segments" in citations
+        assert any(isinstance(c, str) and c.startswith("https://") for c in citations)
+        assert "transcript context" in trace.lower()
+        assert len(queries) >= 2
+
+
 def test_build_plan_compare_infers_compare_mode():
     plan = _build_plan("compare nvda versus tsmc")
     assert plan["compare"] is True
@@ -167,6 +273,11 @@ def test_extract_tickers_ignores_plain_words_in_news_question():
     assert "QCLS" in tickers
     assert "ON" not in tickers
     assert "HAVE" not in tickers
+
+
+def test_extract_tickers_does_not_infer_two_letter_token_from_followup():
+    tickers = _extract_tickers("do you have access to their last earnings call")
+    assert "DO" not in tickers
 
 
 def test_rank_news_items_prioritizes_relevant_headlines():
@@ -522,6 +633,133 @@ def test_answer_question_exposes_top_level_news_for_openclaw(monkeypatch):
     assert response.news[0].url.startswith("https://")
     assert response.data["news"][0]["url"].startswith("https://")
     assert response.data["news"][0]["publishedAt"] == "2026-02-16T00:00:00Z"
+
+
+def test_answer_question_uses_context_company_for_transcript_followup(monkeypatch):
+    company = SimpleNamespace(ticker="DOW", name="DOW INC.", id=77)
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {
+            "companies": [],
+            "actions": ["company_snapshot", "transcript_context"],
+            "years": 10,
+            "compare": False,
+            "response_mode": "grounded",
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: ([], [], []),
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_company_candidate",
+        lambda db, question, candidate: (company, 1.0, "exact_ticker"),
+    )
+
+    def fake_execute_action(db, company_obj, action, years, question):
+        if action == "company_snapshot":
+            return (
+                {
+                    "ticker": "DOW",
+                    "company_name": "DOW INC.",
+                    "latest_fiscal_year": 2025,
+                },
+                ["companies"],
+                "snapshot",
+                [],
+            )
+        if action == "transcript_context":
+            return (
+                {
+                    "available": True,
+                    "ticker": "DOW",
+                    "fiscal_year": 2025,
+                    "fiscal_quarter": 4,
+                    "source_provider": "alpha_vantage",
+                    "source_url": "https://example.com/dow-transcript",
+                    "segments": [{"segment_index": 0, "speaker": "CEO", "text": "Prepared remarks"}],
+                },
+                ["earnings_call_transcripts", "earnings_call_transcript_segments"],
+                "transcript context",
+                [],
+            )
+        return ({}, [], "noop", [])
+
+    monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+
+    response = _answer_question(
+        "great do you have access to their last earnings call?",
+        db=SimpleNamespace(),
+        context_company="DOW",
+    )
+    plan = response.data.get("plan", {})
+    assert plan.get("companies_resolved") == ["DOW"]
+    assert any("Applied context company fallback" in t for t in (response.trace or []))
+
+
+def test_answer_question_uses_thread_context_for_transcript_followup(monkeypatch):
+    company = SimpleNamespace(ticker="DOW", name="DOW INC.", id=77)
+    monkeypatch.setattr(
+        "app.routers.qa._build_plan",
+        lambda question: {
+            "companies": [],
+            "actions": ["company_snapshot", "transcript_context"],
+            "years": 10,
+            "compare": False,
+            "response_mode": "grounded",
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_companies_from_plan",
+        lambda db, question, plan: ([], [], []),
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._load_thread_context_company",
+        lambda db, thread_id: company if thread_id == "thread-1" else None,
+    )
+    monkeypatch.setattr(
+        "app.routers.qa._resolve_company_candidate",
+        lambda db, question, candidate: (company, 1.0, "exact_ticker"),
+    )
+
+    def fake_execute_action(db, company_obj, action, years, question):
+        if action == "company_snapshot":
+            return (
+                {
+                    "ticker": "DOW",
+                    "company_name": "DOW INC.",
+                    "latest_fiscal_year": 2025,
+                },
+                ["companies"],
+                "snapshot",
+                [],
+            )
+        if action == "transcript_context":
+            return (
+                {
+                    "available": True,
+                    "ticker": "DOW",
+                    "fiscal_year": 2025,
+                    "fiscal_quarter": 4,
+                    "source_provider": "alpha_vantage",
+                    "segments": [{"segment_index": 0, "speaker": "CEO", "text": "Prepared remarks"}],
+                },
+                ["earnings_call_transcripts", "earnings_call_transcript_segments"],
+                "transcript context",
+                [],
+            )
+        return ({}, [], "noop", [])
+
+    monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+
+    response = _answer_question(
+        "do you have access to their last earnings call?",
+        db=SimpleNamespace(),
+        thread_id="thread-1",
+    )
+    plan = response.data.get("plan", {})
+    assert plan.get("companies_resolved") == ["DOW"]
+    assert any("fallback (thread)" in t.lower() for t in (response.trace or []))
 
 
 def test_resolve_companies_compare_returns_both_when_confident(monkeypatch):

@@ -9,8 +9,16 @@ const btn =
   "bg-zinc-900 text-white dark:bg-zinc-200 dark:text-zinc-900 " +
   "hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-sky-500/30";
 
+function createThreadId() {
+  if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `qa-${Date.now()}`;
+}
+
 export default function DataAssistantPage() {
   const [input, setInput] = useState("");
+  const [threadId] = useState<string>(() => createThreadId());
   type QAData = {
     plan?: {
       companies_requested?: string[];
@@ -54,14 +62,27 @@ export default function DataAssistantPage() {
   >([]);
   const [loading, setLoading] = useState(false);
 
+  const lastResolvedCompanyFromHistory = () => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== "assistant") continue;
+      const resolved = message.data?.plan?.companies_resolved ?? [];
+      if (resolved.length >= 1 && typeof resolved[0] === "string" && resolved[0].trim()) {
+        return resolved[0].trim();
+      }
+    }
+    return undefined;
+  };
+
   const handleSend = async () => {
     const q = input.trim();
     if (!q) return;
+    const contextCompany = lastResolvedCompanyFromHistory();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: q }]);
     setLoading(true);
     try {
-      const res = await askDataAssistant(q);
+      const res = await askDataAssistant(q, { contextCompany, threadId });
       setMessages((prev) => [
         ...prev,
         {
@@ -129,32 +150,74 @@ export default function DataAssistantPage() {
     return Array.from(dedup.values()).slice(0, 3);
   };
 
+  const formatAssistantMessage = (content: string) => {
+    const lines = (content || "").split("\n");
+    return lines.map((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <div key={`gap-${idx}`} className="h-2" />;
+      if (/^\*\*.*\*\*$/.test(trimmed)) {
+        return (
+          <h4 key={`h-${idx}`} className="mt-2 text-sm font-semibold text-zinc-100">
+            {trimmed.replace(/^\*\*|\*\*$/g, "")}
+          </h4>
+        );
+      }
+      if (/^[A-Za-z][A-Za-z\s]+:$/.test(trimmed)) {
+        return (
+          <h4 key={`k-${idx}`} className="mt-2 text-sm font-semibold text-zinc-100">
+            {trimmed}
+          </h4>
+        );
+      }
+      if (/^[-•]\s+/.test(trimmed)) {
+        return (
+          <div key={`b-${idx}`} className="pl-3 text-zinc-200">
+            <span className="text-zinc-400">•</span> {trimmed.replace(/^[-•]\s+/, "")}
+          </div>
+        );
+      }
+      return (
+        <p key={`p-${idx}`} className="text-zinc-200">
+          {line}
+        </p>
+      );
+    });
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-4">
-      <div className={`${card} p-6`}>
+    <div className="max-w-[1600px] mx-auto space-y-4">
+      <div className={`${card} p-6 bg-gradient-to-r from-zinc-950 via-zinc-950 to-zinc-900`}>
         <div className="text-xs uppercase tracking-wide text-zinc-500">Data Assistant</div>
-        <h1 className="text-2xl font-semibold">Ask about companies</h1>
-        <p className="text-sm text-zinc-400">
+        <h1 className="text-3xl font-semibold tracking-tight">Ask about companies</h1>
+        <p className="text-sm text-zinc-400 mt-1">
           Examples: “What’s the P/E of AAPL?” or “Show net income for TSLA for 10 years.”
         </p>
       </div>
 
-      <div className={`${card} p-4 space-y-3`}>
-        <div className="min-h-[460px] max-h-[720px] overflow-auto space-y-2 text-sm">
+      <div className={`${card} p-4 space-y-3 border-zinc-800 bg-zinc-950`}>
+        <div className="themed-scrollbar min-h-[560px] max-h-[720px] overflow-auto space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/80 p-3 text-sm">
           {messages.length === 0 ? (
             <div className="text-zinc-500">Ask a question to get started.</div>
           ) : (
             messages.map((m, i) => (
               <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-                <div className="inline-block max-w-[90%] rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 py-2 text-left">
-                  <div className="whitespace-pre-wrap leading-7">{m.content}</div>
+                <div
+                  className={
+                    m.role === "user"
+                      ? "inline-block max-w-[88%] rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-left"
+                      : "inline-block max-w-[92%] rounded-2xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-left shadow-sm"
+                  }
+                >
+                  <div className="space-y-1 leading-7">
+                    {m.role === "assistant" ? formatAssistantMessage(m.content) : <div>{m.content}</div>}
+                  </div>
                 </div>
                 {m.role === "assistant" && m.citations && m.citations.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap gap-1 text-xs text-zinc-500">
+                  <div className="mt-2 flex flex-wrap gap-1 text-xs text-zinc-500">
                     {m.citations.map((c) => (
                       <span
                         key={c}
-                        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-0.5"
+                        className="rounded-md border border-zinc-700 bg-zinc-900/70 px-2 py-0.5"
                       >
                         {c}
                       </span>
@@ -166,10 +229,10 @@ export default function DataAssistantPage() {
                     {extractNewsSnippets(m.data).map((snippet, si) => (
                       <div
                         key={`${snippet.url ?? snippet.title}-${si}`}
-                        className="max-w-[90%] rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 p-2"
+                        className="max-w-[92%] rounded-lg border border-zinc-700 bg-zinc-900 p-2"
                       >
-                        <div className="font-semibold text-zinc-700 dark:text-zinc-200">{snippet.title}</div>
-                        <div className="mt-1 text-zinc-600 dark:text-zinc-300 max-h-24 overflow-hidden">
+                        <div className="font-semibold text-zinc-200">{snippet.title}</div>
+                        <div className="mt-1 text-zinc-300 max-h-24 overflow-hidden">
                           {snippet.snippet}
                         </div>
                         {snippet.url ? (
@@ -177,7 +240,7 @@ export default function DataAssistantPage() {
                             href={snippet.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="mt-1 inline-block underline text-zinc-500 hover:opacity-80"
+                            className="mt-1 inline-block underline text-zinc-400 hover:opacity-80"
                           >
                             Open source
                           </a>
@@ -187,11 +250,11 @@ export default function DataAssistantPage() {
                   </div>
                 ) : null}
                 {m.role === "assistant" && m.trace && m.trace.length > 0 ? (
-                  <details className="mt-1 text-xs text-zinc-500">
+                  <details className="mt-2 text-xs text-zinc-400">
                     <summary className="cursor-pointer select-none">Reasoning trace</summary>
-                    <div className="mt-1 whitespace-pre-wrap leading-6">{m.trace.join("\n")}</div>
+                    <div className="mt-1 whitespace-pre-wrap leading-6 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2">{m.trace.join("\n")}</div>
                     {m.data?.plan ? (
-                      <div className="mt-2 rounded-lg border border-zinc-300 dark:border-zinc-700 p-2">
+                      <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2">
                         <div className="font-semibold mb-1">Plan</div>
                         <div>Requested: {(m.data.plan.companies_requested ?? []).join(", ") || "none"}</div>
                         <div>Resolved: {(m.data.plan.companies_resolved ?? []).join(", ") || "none"}</div>
@@ -203,10 +266,10 @@ export default function DataAssistantPage() {
                       </div>
                     ) : null}
                     {m.data?.queries && m.data.queries.length > 0 ? (
-                      <div className="mt-2 rounded-lg border border-zinc-300 dark:border-zinc-700 p-2 space-y-2">
+                      <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2 space-y-2">
                         <div className="font-semibold">Queries</div>
                         {m.data.queries.map((q, qi) => (
-                          <div key={qi} className="rounded-md border border-zinc-300/60 dark:border-zinc-700/60 p-2">
+                          <div key={qi} className="rounded-md border border-zinc-800 p-2">
                             <div>
                               {q.company ?? "n/a"} · {q.action ?? "query"}
                             </div>
@@ -218,13 +281,13 @@ export default function DataAssistantPage() {
                       </div>
                     ) : null}
                     {m.data?.sources && m.data.sources.length > 0 ? (
-                      <div className="mt-2 rounded-lg border border-zinc-300 dark:border-zinc-700 p-2">
+                      <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2">
                         <div className="font-semibold mb-1">Sources</div>
                         <div>{m.data.sources.join(", ")}</div>
                       </div>
                     ) : null}
                     {extractNewsLinks(m.data).length > 0 ? (
-                      <div className="mt-2 rounded-lg border border-zinc-300 dark:border-zinc-700 p-2">
+                      <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2">
                         <div className="font-semibold mb-1">News Citations</div>
                         <div className="space-y-1">
                           {extractNewsLinks(m.data).map((link) => (
@@ -247,18 +310,18 @@ export default function DataAssistantPage() {
               </div>
             ))
           )}
-          {loading ? <div className="text-zinc-500">Thinking…</div> : null}
+          {loading ? <div className="text-zinc-400">Thinking…</div> : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-end">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleComposerKeyDown}
             placeholder="Ask a finance question..."
             rows={2}
-            className="flex-1 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 text-sm resize-none"
+            className="flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm resize-none"
           />
-          <button className={btn} onClick={handleSend} disabled={loading || !input.trim()}>
+          <button className={`${btn} h-11 px-4`} onClick={handleSend} disabled={loading || !input.trim()}>
             Send
           </button>
         </div>

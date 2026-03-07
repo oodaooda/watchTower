@@ -115,6 +115,52 @@ export async function fetchCompanyNews(identifier: string, limit = 12): Promise<
   return data?.items ?? [];
 }
 
+// -------- Earnings Transcripts --------
+
+export type EarningsTranscript = {
+  id: number;
+  company_id: number;
+  ticker: string;
+  fiscal_year: number;
+  fiscal_quarter: number;
+  call_date?: string | null;
+  source_provider: string;
+  source_url?: string | null;
+  source_doc_id?: string | null;
+  language: string;
+  storage_mode: string;
+  ingested_at?: string | null;
+  updated_at?: string | null;
+  segment_count: number;
+};
+
+export type EarningsTranscriptSegment = {
+  id: number;
+  transcript_id: number;
+  segment_index: number;
+  speaker?: string | null;
+  section?: string | null;
+  text: string;
+  token_count: number;
+};
+
+export type EarningsTranscriptDetail = {
+  transcript: EarningsTranscript;
+  segments: EarningsTranscriptSegment[];
+};
+
+export async function fetchCompanyTranscripts(companyId: number): Promise<EarningsTranscript[]> {
+  const res = await fetch(`${API_BASE}/companies/${companyId}/transcripts`);
+  if (!res.ok) throw new Error(`transcripts ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTranscriptDetail(transcriptId: number): Promise<EarningsTranscriptDetail> {
+  const res = await fetch(`${API_BASE}/transcripts/${transcriptId}`);
+  if (!res.ok) throw new Error(`transcript ${res.status}`);
+  return res.json();
+}
+
 // -------- Modeling --------
 
 export type ModelingAssumption = {
@@ -297,11 +343,21 @@ export type QAResponse = {
   trace?: string[];
 };
 
-export async function askDataAssistant(question: string): Promise<QAResponse> {
+export async function askDataAssistant(
+  question: string,
+  options?: { contextCompany?: string; threadId?: string }
+): Promise<QAResponse> {
+  const payload: { question: string; context_company?: string; thread_id?: string } = { question };
+  if (options?.contextCompany?.trim()) {
+    payload.context_company = options.contextCompany.trim();
+  }
+  if (options?.threadId?.trim()) {
+    payload.thread_id = options.threadId.trim();
+  }
   const res = await fetch(`${API_BASE}/qa`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`qa ${res.status}`);
   return res.json();
@@ -331,9 +387,10 @@ export type ApiKeyCreateOut = {
 };
 
 function authHeaders(token: string) {
+  const normalizedToken = token.trim();
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${normalizedToken}`,
   };
 }
 
