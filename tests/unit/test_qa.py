@@ -35,6 +35,10 @@ def test_extract_ticker_skips_common_words():
     assert _extract_ticker("what was it's earnings for the last 10 years") is None
 
 
+def test_extract_ticker_does_not_promote_lowercase_tell_to_ticker():
+    assert _extract_ticker("tell me about my portfolio") is None
+
+
 def test_classify_response_mode_routes_conceptual_prompt_to_general():
     mode = _classify_response_mode("what is operating leverage", has_entities=False, parsed_mode=None)
     assert mode == "general"
@@ -273,6 +277,12 @@ def test_build_plan_explicit_favorites_sets_use_favorites():
     assert plan["use_favorites"] is True
     assert plan["favorites_reason"] == "explicit_portfolio_language"
     assert plan["companies"] == []
+
+
+def test_build_plan_tell_me_about_my_portfolio_uses_favorites():
+    plan = _build_plan("tell me about my portfolio")
+    assert plan["companies"] == []
+    assert plan["use_favorites"] is True
 
 
 def test_build_plan_explicit_ticker_overrides_favorites_fallback():

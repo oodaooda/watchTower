@@ -177,12 +177,12 @@ def _load_favorite_companies(db: Session) -> List[Company]:
 def _extract_ticker(question: str) -> Optional[str]:
     if not question:
         return None
-    m = re.search(r"\(([A-Z]{1,5})\)", question.upper())
+    m = re.search(r"\(([A-Za-z]{1,5})\)", question)
     if m:
-        return m.group(1)
-    m = re.search(r"\bticker\s+([A-Z]{1,5})\b", question.upper())
+        return m.group(1).upper()
+    m = re.search(r"\bticker\s+([A-Za-z]{1,5})\b", question, flags=re.IGNORECASE)
     if m:
-        return m.group(1)
+        return m.group(1).upper()
     stop = {
         "WHAT",
         "WHATS",
@@ -199,7 +199,8 @@ def _extract_ticker(question: str) -> Optional[str]:
         "YEARS",
         "YEAR",
     }
-    candidates = [c for c in re.findall(r"\b[A-Z]{3,5}\b", question.upper()) if c not in stop]
+    uppercase_tokens = [tok for tok in re.findall(r"\b[A-Za-z]{3,5}\b", question) if tok.isupper()]
+    candidates = [c.upper() for c in uppercase_tokens if c.upper() not in stop]
     return candidates[0] if candidates else None
 
 
