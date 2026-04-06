@@ -26,6 +26,7 @@ from app.core.models import (
     Company,
     EarningsCallTranscript,
     EarningsCallTranscriptSegment,
+    FavoriteCompany,
     FinancialAnnual,
     PriceAnnual,
     QAThreadContext,
@@ -82,6 +83,8 @@ NEWS_FETCH_TIMEOUT_SECONDS = 4.0
 NEWS_FETCH_MAX_BYTES = 150_000
 NEWS_FETCH_MAX_ARTICLES = 3
 NEWS_SNIPPET_CHARS = 800
+FAVORITES_MAX_COMPANIES = 10
+FAVORITES_MAX_NEWS_COMPANIES = 5
 SCHEMA_CONTEXT_CACHE_TTL_SEC = 300
 _SCHEMA_CONTEXT_CACHE: Dict[str, Any] = {"ts": 0.0, "context": {}}
 
@@ -93,6 +96,82 @@ def _openai_client() -> Optional[OpenAI]:
     if not key:
         return None
     return OpenAI(api_key=key)
+
+
+def _contains_favorites_term(question: str) -> bool:
+    q = f" {(question or '').strip().lower()} "
+    markers = (
+        " favorite ",
+        " favorites ",
+        " portfolio ",
+        " watchlist ",
+        " tracked companies ",
+        " tracked names ",
+        " saved names ",
+    )
+    return any(marker in q for marker in markers)
+
+
+def _is_favorites_list_question(question: str) -> bool:
+    q = (question or "").strip().lower()
+    if not q or not _contains_favorites_term(q):
+        return False
+    if any(
+        q.startswith(prefix)
+        for prefix in ("what are my", "show my", "list my", "tell me my", "which are my")
+    ):
+        return True
+    return "what are my favorite" in q or "list my favorite" in q
+
+
+def _should_use_favorites(
+    question: str,
+    *,
+    has_explicit_companies: bool,
+    compare: bool,
+    response_mode: str,
+) -> tuple[bool, Optional[str]]:
+    if has_explicit_companies:
+        return False, None
+    if _contains_favorites_term(question):
+        return True, "explicit_portfolio_language"
+    if response_mode == "general" or _is_conceptual_question(question):
+        return False, None
+
+    q = f" {(question or '').strip().lower()} "
+    implicit_markers = (
+        " which one ",
+        " which of ",
+        " among them ",
+        " best ",
+        " worst ",
+        " strongest ",
+        " weakest ",
+        " cheapest ",
+        " most expensive ",
+    )
+    if compare:
+        return True, "implicit_compare_without_entities"
+    if _is_news_question(q):
+        return True, "implicit_news_without_entities"
+    if any(marker in q for marker in implicit_markers):
+        return True, "implicit_portfolio_question"
+    return False, None
+
+
+def _favorites_scope_limit(actions: List[str]) -> int:
+    if "news_context" in actions:
+        return FAVORITES_MAX_NEWS_COMPANIES
+    return FAVORITES_MAX_COMPANIES
+
+
+def _load_favorite_companies(db: Session) -> List[Company]:
+    stmt = (
+        select(Company)
+        .join(FavoriteCompany, FavoriteCompany.company_id == Company.id)
+        .order_by(FavoriteCompany.sort_order.asc(), FavoriteCompany.created_at.asc(), Company.ticker.asc())
+    )
+    return db.execute(stmt).scalars().all()
 
 
 def _extract_ticker(question: str) -> Optional[str]:
@@ -1293,6 +1372,14 @@ def _build_plan(question: str) -> Dict[str, Any]:
                 actions.append(action)
 
     response_mode = _classify_response_mode(question, has_entities=bool(dedup_companies), parsed_mode=parsed_mode)
+    use_favorites, favorites_reason = _should_use_favorites(
+        question,
+        has_explicit_companies=bool(dedup_companies),
+        compare=compare,
+        response_mode=response_mode,
+    )
+    if use_favorites and not compare and _is_favorites_list_question(question):
+        actions = ["company_snapshot", "pe"]
 
     return {
         "companies": dedup_companies,
@@ -1300,6 +1387,8 @@ def _build_plan(question: str) -> Dict[str, Any]:
         "actions": actions,
         "compare": compare,
         "response_mode": response_mode,
+        "use_favorites": use_favorites,
+        "favorites_reason": favorites_reason,
     }
 
 
@@ -1961,6 +2050,11 @@ def _answer_question(
     actions = [a for a in plan.get("actions", []) if a in ALLOWED_ACTIONS]
     years = int(plan.get("years") or 10)
     compare_mode = bool(plan.get("compare"))
+    use_favorites = bool(plan.get("use_favorites"))
+    favorites_reason = plan.get("favorites_reason") if isinstance(plan.get("favorites_reason"), str) else None
+    favorites_total = 0
+    favorites_truncated = False
+    favorites_scope_limit = _favorites_scope_limit(actions)
     used_context_company = False
     context_source: Optional[str] = None
     context_candidate: Optional[str] = None
@@ -2003,6 +2097,54 @@ def _answer_question(
 
     can_execute_sql = hasattr(db, "execute")
     allow_llm_render = can_execute_sql
+
+    if not companies and use_favorites:
+        favorites = _load_favorite_companies(db) if can_execute_sql else []
+        favorites_total = len(favorites)
+        if favorites_total == 0:
+            return QAResponse(
+                answer="No favorite companies are currently saved in watchTower, so I do not have a portfolio context to use for this question.",
+                citations=["favorite_companies"],
+                news=[],
+                data={
+                    "plan": {
+                        "companies_requested": plan.get("companies", []),
+                        "companies_resolved": [],
+                        "unresolved_companies": [],
+                        "actions": actions,
+                        "years": years,
+                        "compare": compare_mode,
+                        "response_mode": response_mode,
+                        "resolver_diagnostics": resolver_diagnostics,
+                        "use_favorites": True,
+                        "favorites_reason": favorites_reason,
+                        "favorites_total": 0,
+                        "favorites_truncated": False,
+                    },
+                    "queries": [],
+                    "sources": ["favorite_companies"],
+                    "news": [],
+                },
+                trace=[
+                    "No explicit company was resolved from the prompt.",
+                    f"Favorites fallback requested ({favorites_reason or 'unspecified'}).",
+                    "No favorites are currently saved.",
+                ],
+            )
+        if favorites_total > favorites_scope_limit:
+            favorites_truncated = True
+            favorites = favorites[:favorites_scope_limit]
+        companies = favorites
+        unresolved = []
+        resolver_diagnostics.append(
+            {
+                "candidate": "favorites",
+                "resolved_ticker": ",".join([c.ticker for c in companies]),
+                "confidence": 1.0,
+                "reason": f"favorites_fallback:{favorites_reason or 'unspecified'}",
+                "decision": "resolved",
+            }
+        )
 
     if can_execute_sql and _should_try_sql_path(question, response_mode, compare_mode, actions):
         schema_context = _get_schema_context(db)
@@ -2063,6 +2205,10 @@ def _answer_question(
                                 "compare": compare_mode,
                                 "response_mode": response_mode,
                                 "resolver_diagnostics": resolver_diagnostics,
+                                "use_favorites": use_favorites,
+                                "favorites_reason": favorites_reason,
+                                "favorites_total": favorites_total,
+                                "favorites_truncated": favorites_truncated,
                             },
                             "queries": query_trace,
                             "sources": sorted(list(_extract_tables_from_sql(sql_bounded))),
@@ -2125,6 +2271,10 @@ def _answer_question(
                         "compare": bool(plan.get("compare")),
                         "response_mode": response_mode,
                         "resolver_diagnostics": resolver_diagnostics,
+                        "use_favorites": use_favorites,
+                        "favorites_reason": favorites_reason,
+                        "favorites_total": favorites_total,
+                        "favorites_truncated": favorites_truncated,
                     },
                     "queries": [],
                     "sources": used_sources,
@@ -2181,6 +2331,14 @@ def _answer_question(
     ]
     if used_context_company:
         trace.append(f"Applied context company fallback ({context_source}): {context_candidate}.")
+    if use_favorites:
+        trace.append(
+            f"Applied favorites fallback ({favorites_reason or 'unspecified'}): using {len(companies)} favorite companies."
+        )
+        if favorites_truncated:
+            trace.append(
+                f"Favorites scope limited to first {len(companies)} of {favorites_total} companies for this query."
+            )
     if 'trace_sql' in locals():
         trace.extend(trace_sql)
     if unresolved:
@@ -2217,6 +2375,10 @@ def _answer_question(
         "compare": bool(plan.get("compare")),
         "response_mode": plan.get("response_mode", "grounded"),
         "resolver_diagnostics": resolver_diagnostics,
+        "use_favorites": use_favorites,
+        "favorites_reason": favorites_reason,
+        "favorites_total": favorites_total,
+        "favorites_truncated": favorites_truncated,
     }
 
     missing_for_comparison: List[str] = []
@@ -2268,7 +2430,16 @@ def _answer_question(
             )
     if "general_context" in used_sources:
         citations.add("general_context")
+    if use_favorites:
+        citations.add("favorite_companies")
     news_items = _collect_news_items(results_by_company, max_items=5)
+    if use_favorites and favorites_truncated:
+        answer = (
+            f"{answer}\n\nFavorites scope note:\n"
+            f"- This query used the first {len(companies)} of {favorites_total} favorite companies."
+        )
+    if use_favorites and _is_favorites_list_question(question):
+        answer = f"Favorite companies currently tracked:\n{answer}"
     if missing_for_comparison:
         answer = (
             f"{answer}\n\nWhat is missing to complete comparison:\n"

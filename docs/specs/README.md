@@ -5,6 +5,7 @@ Use this folder for feature-level product and engineering specifications.
 Current specs reflect major shipped or in-flight surfaces:
 
 - `data-assistant.md`
+- `favorites-aware-qa.md`
 - `M001_earnings-call-transcripts.md`
 - `openclaw-api.md`
 - `usage-observability.md`

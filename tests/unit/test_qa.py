@@ -28,7 +28,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.core.db import Base
-from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment
+from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment, FavoriteCompany
 
 
 def test_extract_ticker_skips_common_words():
@@ -266,6 +266,19 @@ def test_build_plan_compare_infers_compare_mode():
 def test_build_plan_latest_news_of_single_ticker_keeps_only_ticker():
     plan = _build_plan("what's the latest news of qcls?")
     assert [c.upper() for c in plan["companies"]] == ["QCLS"]
+
+
+def test_build_plan_explicit_favorites_sets_use_favorites():
+    plan = _build_plan("what are my favorite companies?")
+    assert plan["use_favorites"] is True
+    assert plan["favorites_reason"] == "explicit_portfolio_language"
+    assert plan["companies"] == []
+
+
+def test_build_plan_explicit_ticker_overrides_favorites_fallback():
+    plan = _build_plan("what is AAPL p/e in my portfolio?")
+    assert "AAPL" in [c.upper() for c in plan["companies"]]
+    assert plan["use_favorites"] is False
 
 
 def test_extract_tickers_ignores_plain_words_in_news_question():
@@ -633,6 +646,271 @@ def test_answer_question_exposes_top_level_news_for_openclaw(monkeypatch):
     assert response.news[0].url.startswith("https://")
     assert response.data["news"][0]["url"].startswith("https://")
     assert response.data["news"][0]["publishedAt"] == "2026-02-16T00:00:00Z"
+
+
+def test_answer_question_uses_favorites_fallback_and_reports_plan(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        apple = Company(ticker="AAPL", name="Apple Inc.")
+        microsoft = Company(ticker="MSFT", name="Microsoft Corporation")
+        db.add_all([apple, microsoft])
+        db.commit()
+        db.refresh(apple)
+        db.refresh(microsoft)
+        db.add_all(
+            [
+                FavoriteCompany(company_id=apple.id, sort_order=1),
+                FavoriteCompany(company_id=microsoft.id, sort_order=2),
+            ]
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            "app.routers.qa._build_plan",
+            lambda question: {
+                "companies": [],
+                "actions": ["company_snapshot", "pe"],
+                "years": 10,
+                "compare": False,
+                "response_mode": "grounded",
+                "use_favorites": True,
+                "favorites_reason": "explicit_portfolio_language",
+            },
+        )
+        monkeypatch.setattr(
+            "app.routers.qa._resolve_companies_from_plan",
+            lambda db, question, plan: ([], [], []),
+        )
+        monkeypatch.setattr("app.routers.qa._should_try_sql_path", lambda *args, **kwargs: False)
+
+        def fake_execute_action(db, company_obj, action, years, question):
+            if action == "company_snapshot":
+                return (
+                    {
+                        "ticker": company_obj.ticker,
+                        "company_name": company_obj.name,
+                        "latest_fiscal_year": 2024,
+                        "revenue": 1000000000.0,
+                        "net_income": 100000000.0,
+                        "close_price": 100.0,
+                    },
+                    ["companies", "financials_annual", "prices_annual"],
+                    "snapshot",
+                    [],
+                )
+            if action == "pe":
+                return (
+                    {"ticker": company_obj.ticker, "pe_ttm": 25.0, "fiscal_year": 2024},
+                    ["prices_annual"],
+                    "pe",
+                    [],
+                )
+            return ({}, [], "noop", [])
+
+        monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+        monkeypatch.setattr("app.routers.qa._render_answer_with_llm", lambda **kwargs: kwargs["fallback_answer"])
+
+        response = _answer_question("what are my favorite companies?", db=db)
+        assert "Favorite companies currently tracked:" in response.answer
+        assert "Apple Inc. (AAPL)" in response.answer
+        assert "Microsoft Corporation (MSFT)" in response.answer
+        assert response.data["plan"]["use_favorites"] is True
+        assert response.data["plan"]["companies_resolved"] == ["AAPL", "MSFT"]
+        assert "favorite_companies" in response.citations
+
+
+def test_answer_question_returns_clear_message_when_favorites_are_empty(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        monkeypatch.setattr(
+            "app.routers.qa._build_plan",
+            lambda question: {
+                "companies": [],
+                "actions": ["company_snapshot", "pe"],
+                "years": 10,
+                "compare": False,
+                "response_mode": "grounded",
+                "use_favorites": True,
+                "favorites_reason": "explicit_portfolio_language",
+            },
+        )
+        monkeypatch.setattr(
+            "app.routers.qa._resolve_companies_from_plan",
+            lambda db, question, plan: ([], [], []),
+        )
+
+        response = _answer_question("what are my favorites?", db=db)
+        assert "No favorite companies are currently saved" in response.answer
+        assert response.data["plan"]["favorites_total"] == 0
+        assert response.citations == ["favorite_companies"]
+
+
+def test_answer_question_favorites_news_returns_top_level_news(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        qcls = Company(ticker="QCLS", name="Q/C TECHNOLOGIES, INC.")
+        db.add(qcls)
+        db.commit()
+        db.refresh(qcls)
+        db.add(FavoriteCompany(company_id=qcls.id, sort_order=1))
+        db.commit()
+
+        monkeypatch.setattr(
+            "app.routers.qa._build_plan",
+            lambda question: {
+                "companies": [],
+                "actions": ["company_snapshot", "pe", "news_context"],
+                "years": 10,
+                "compare": False,
+                "response_mode": "grounded",
+                "use_favorites": True,
+                "favorites_reason": "explicit_portfolio_language",
+            },
+        )
+        monkeypatch.setattr(
+            "app.routers.qa._resolve_companies_from_plan",
+            lambda db, question, plan: ([], [], []),
+        )
+        monkeypatch.setattr("app.routers.qa._should_try_sql_path", lambda *args, **kwargs: False)
+
+        def fake_execute_action(db, company_obj, action, years, question):
+            if action == "company_snapshot":
+                return (
+                    {"ticker": "QCLS", "company_name": "Q/C TECHNOLOGIES, INC.", "close_price": 3.95},
+                    ["companies", "prices_annual"],
+                    "snapshot",
+                    [],
+                )
+            if action == "pe":
+                return ({"ticker": "QCLS", "pe_ttm": -0.3543, "fiscal_year": 2024}, ["prices_annual"], "pe", [])
+            if action == "news_context":
+                return (
+                    {
+                        "ticker": "QCLS",
+                        "items": [
+                            {
+                                "title": "QCLS Surges on Expansion News",
+                                "url": "https://example.com/qcls1",
+                                "source": "Example",
+                                "published_at": "2026-02-16T00:00:00Z",
+                                "sentiment": "Somewhat-Bullish",
+                                "relevance_score": 9,
+                            }
+                        ],
+                        "articles": [],
+                    },
+                    ["news_sentiment"],
+                    "news",
+                    [],
+                )
+            return ({}, [], "noop", [])
+
+        monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+        monkeypatch.setattr("app.routers.qa._render_answer_with_llm", lambda **kwargs: kwargs["fallback_answer"])
+
+        response = _answer_question("what's the latest news on my portfolio?", db=db)
+        assert response.data["plan"]["use_favorites"] is True
+        assert len(response.news) == 1
+        assert response.news[0].url == "https://example.com/qcls1"
+
+
+def test_answer_question_favorites_scope_note_when_truncated(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        companies = []
+        for idx in range(12):
+            company = Company(ticker=f"T{idx:02d}", name=f"Test Company {idx}")
+            db.add(company)
+            companies.append(company)
+        db.commit()
+        for company in companies:
+            db.refresh(company)
+        db.add_all(
+            [FavoriteCompany(company_id=company.id, sort_order=i + 1) for i, company in enumerate(companies)]
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            "app.routers.qa._build_plan",
+            lambda question: {
+                "companies": [],
+                "actions": ["company_snapshot", "pe"],
+                "years": 10,
+                "compare": False,
+                "response_mode": "grounded",
+                "use_favorites": True,
+                "favorites_reason": "explicit_portfolio_language",
+            },
+        )
+        monkeypatch.setattr(
+            "app.routers.qa._resolve_companies_from_plan",
+            lambda db, question, plan: ([], [], []),
+        )
+        monkeypatch.setattr("app.routers.qa._should_try_sql_path", lambda *args, **kwargs: False)
+
+        def fake_execute_action(db, company_obj, action, years, question):
+            if action == "company_snapshot":
+                return (
+                    {
+                        "ticker": company_obj.ticker,
+                        "company_name": company_obj.name,
+                        "latest_fiscal_year": 2024,
+                        "revenue": 1000000.0,
+                        "net_income": 500000.0,
+                        "close_price": 10.0,
+                    },
+                    ["companies", "financials_annual", "prices_annual"],
+                    "snapshot",
+                    [],
+                )
+            if action == "pe":
+                return (
+                    {"ticker": company_obj.ticker, "pe_ttm": 20.0, "fiscal_year": 2024},
+                    ["prices_annual"],
+                    "pe",
+                    [],
+                )
+            return ({}, [], "noop", [])
+
+        monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
+        monkeypatch.setattr("app.routers.qa._render_answer_with_llm", lambda **kwargs: kwargs["fallback_answer"])
+
+        response = _answer_question("show my portfolio", db=db)
+        assert response.data["plan"]["favorites_truncated"] is True
+        assert response.data["plan"]["favorites_total"] == 12
+        assert "Favorites scope note:" in response.answer
 
 
 def test_answer_question_uses_context_company_for_transcript_followup(monkeypatch):
