@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException
 import logging
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
+from app.routers.portfolio import _load_positions as _load_portfolio_positions
+from app.routers.portfolio import _serialize_portfolio_positions
 from app.routers.prices import _get_company_news
 
 try:
@@ -28,6 +30,7 @@ from app.core.models import (
     EarningsCallTranscriptSegment,
     FavoriteCompany,
     FinancialAnnual,
+    PortfolioPosition,
     PriceAnnual,
     QAThreadContext,
 )
@@ -98,16 +101,32 @@ def _openai_client() -> Optional[OpenAI]:
     return OpenAI(api_key=key)
 
 
+def _normalized_question_text(question: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (question or "").strip().lower()).strip()
+
+
 def _contains_favorites_term(question: str) -> bool:
-    q = f" {(question or '').strip().lower()} "
+    q = f" {_normalized_question_text(question)} "
     markers = (
         " favorite ",
         " favorites ",
-        " portfolio ",
         " watchlist ",
         " tracked companies ",
         " tracked names ",
         " saved names ",
+    )
+    return any(marker in q for marker in markers)
+
+
+def _contains_portfolio_term(question: str) -> bool:
+    q = f" {_normalized_question_text(question)} "
+    markers = (
+        " portfolio ",
+        " holdings ",
+        " positions ",
+        " allocation ",
+        " exposure ",
+        " cost basis ",
     )
     return any(marker in q for marker in markers)
 
@@ -138,7 +157,7 @@ def _should_use_favorites(
     if response_mode == "general" or _is_conceptual_question(question):
         return False, None
 
-    q = f" {(question or '').strip().lower()} "
+    q = f" {_normalized_question_text(question)} "
     implicit_markers = (
         " which one ",
         " which of ",
@@ -159,6 +178,38 @@ def _should_use_favorites(
     return False, None
 
 
+def _should_use_portfolio(
+    question: str,
+    *,
+    compare: bool,
+    response_mode: str,
+) -> tuple[bool, Optional[str]]:
+    q = f" {_normalized_question_text(question)} "
+    if _contains_portfolio_term(question):
+        return True, "explicit_portfolio_language"
+    implicit_markers = (
+        " my gains ",
+        " my gain ",
+        " my losses ",
+        " my loss ",
+        " my holdings ",
+        " my positions ",
+        " my allocation ",
+        " my exposure ",
+        " up the most ",
+        " down the most ",
+        " biggest gain ",
+        " biggest loss ",
+    )
+    if any(marker in q for marker in implicit_markers):
+        return True, "implicit_portfolio_question"
+    if compare and (" etf " in q or " stock " in q):
+        return True, "implicit_portfolio_compare"
+    if response_mode == "general" or _is_conceptual_question(question):
+        return False, None
+    return False, None
+
+
 def _favorites_scope_limit(actions: List[str]) -> int:
     if "news_context" in actions:
         return FAVORITES_MAX_NEWS_COMPANIES
@@ -172,6 +223,166 @@ def _load_favorite_companies(db: Session) -> List[Company]:
         .order_by(FavoriteCompany.sort_order.asc(), FavoriteCompany.created_at.asc(), Company.ticker.asc())
     )
     return db.execute(stmt).scalars().all()
+
+
+def _is_portfolio_list_question(question: str) -> bool:
+    q = (question or "").strip().lower()
+    prompts = (
+        "tell me about my portfolio",
+        "show my portfolio",
+        "what is my portfolio",
+        "what are my holdings",
+        "what are my positions",
+        "how is my portfolio doing",
+    )
+    return any(prompt in q for prompt in prompts)
+
+
+def _is_portfolio_gain_question(question: str) -> bool:
+    q = f" {_normalized_question_text(question)} "
+    markers = (
+        " gain ",
+        " gains ",
+        " loss ",
+        " losses ",
+        " up the most ",
+        " down the most ",
+        " winner ",
+        " loser ",
+        " return ",
+    )
+    return any(marker in q for marker in markers)
+
+
+def _is_portfolio_allocation_question(question: str) -> bool:
+    q = f" {_normalized_question_text(question)} "
+    markers = (" allocation ", " concentration ", " weight ", " exposure ")
+    return any(marker in q for marker in markers)
+
+
+def _is_portfolio_group_compare_question(question: str) -> bool:
+    q = f" {_normalized_question_text(question)} "
+    return (" etf " in q and " stock " in q and (" holdings " in q or " portfolio " in q))
+
+
+def _portfolio_summary_data(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    priced = [position for position in positions if position.get("market_value") is not None]
+    gain_ranked = [position for position in positions if position.get("unrealized_gain_loss") is not None]
+    gain_ranked.sort(key=lambda item: item.get("unrealized_gain_loss") or 0.0, reverse=True)
+    weight_ranked = [position for position in positions if position.get("portfolio_weight") is not None]
+    weight_ranked.sort(key=lambda item: item.get("portfolio_weight") or 0.0, reverse=True)
+    return {
+        "priced_positions": priced,
+        "gainers": gain_ranked,
+        "top_weights": weight_ranked,
+    }
+
+
+def _build_portfolio_answer(
+    question: str,
+    overview: Dict[str, Any],
+    *,
+    requested_tickers: List[str],
+) -> str:
+    positions = list(overview.get("positions") or [])
+    summary = dict(overview.get("summary") or {})
+    requested_upper = {ticker.upper() for ticker in requested_tickers if isinstance(ticker, str)}
+    if requested_upper and not _is_portfolio_group_compare_question(question):
+        positions = [position for position in positions if str(position.get("ticker") or "").upper() in requested_upper]
+        if not positions:
+            requested_label = ", ".join(sorted(requested_upper))
+            return f"No portfolio position is currently saved for {requested_label}."
+
+    analytics = _portfolio_summary_data(positions)
+    q = (question or "").strip().lower()
+
+    if _is_portfolio_group_compare_question(question):
+        grouped: Dict[str, List[Dict[str, Any]]] = {"etf": [], "equity": []}
+        for position in positions:
+            grouped.setdefault(str(position.get("asset_type") or "equity"), []).append(position)
+        lines = ["Portfolio asset mix:"]
+        for asset_type in ("etf", "equity"):
+            bucket = grouped.get(asset_type, [])
+            market_value = sum((item.get("market_value") or 0.0) for item in bucket if item.get("market_value") is not None)
+            total_cost_basis = sum((item.get("total_cost_basis") or 0.0) for item in bucket)
+            gain = None
+            if bucket and all(item.get("market_value") is not None for item in bucket):
+                gain = market_value - total_cost_basis
+            label = "ETF holdings" if asset_type == "etf" else "Stock holdings"
+            lines.append(
+                f"- {label}: {len(bucket)} position(s), cost basis {total_cost_basis:,.2f}, "
+                f"market value {market_value:,.2f}" + (f", unrealized gain/loss {gain:,.2f}" if gain is not None else ", market value incomplete")
+            )
+        return "\n".join(lines)
+
+    if _is_portfolio_allocation_question(question):
+        top_weights = analytics["top_weights"][:5]
+        lines = ["Portfolio allocation snapshot:"]
+        for position in top_weights:
+            weight = position.get("portfolio_weight")
+            lines.append(
+                f"- {position.get('ticker')}: {((weight or 0.0) * 100):.2f}% weight at market value {(position.get('market_value') or 0.0):,.2f}"
+            )
+        if summary.get("has_unpriced_positions"):
+            lines.append("- Allocation is incomplete because one or more positions do not have a usable quote.")
+        return "\n".join(lines)
+
+    if _is_portfolio_gain_question(question):
+        if len(positions) == 1:
+            position = positions[0]
+            gain = position.get("unrealized_gain_loss")
+            gain_pct = position.get("unrealized_gain_loss_pct")
+            if gain is None:
+                return f"{position.get('ticker')} does not have a usable quote yet, so I cannot calculate its unrealized gain/loss."
+            return (
+                f"{position.get('ticker')} is up {gain:,.2f} "
+                f"({((gain_pct or 0.0) * 100):.2f}%) versus an average cost basis of {(position.get('avg_cost_basis') or 0.0):,.2f}."
+            )
+        gainers = analytics["gainers"]
+        if gainers:
+            best = gainers[0]
+            worst = gainers[-1]
+            lines = [
+                f"Portfolio unrealized gain/loss is {summary.get('total_unrealized_gain_loss', 0.0):,.2f}"
+                + (
+                    f" ({((summary.get('total_unrealized_gain_loss_pct') or 0.0) * 100):.2f}%)."
+                    if summary.get("total_unrealized_gain_loss_pct") is not None
+                    else "."
+                ),
+                f"- Biggest winner: {best.get('ticker')} at {(best.get('unrealized_gain_loss') or 0.0):,.2f}.",
+                f"- Biggest laggard: {worst.get('ticker')} at {(worst.get('unrealized_gain_loss') or 0.0):,.2f}.",
+            ]
+            if summary.get("has_unpriced_positions"):
+                lines.append("- One or more positions are missing quotes, so totals are incomplete.")
+            return "\n".join(lines)
+
+    if _is_portfolio_list_question(question) or "portfolio" in q:
+        lines = [
+            f"Portfolio summary: cost basis {summary.get('total_cost_basis', 0.0):,.2f}, "
+            + (
+                f"market value {summary.get('total_market_value', 0.0):,.2f}, "
+                f"unrealized gain/loss {summary.get('total_unrealized_gain_loss', 0.0):,.2f}."
+                if summary.get("total_market_value") is not None
+                else "market value is incomplete because one or more positions do not have a usable quote."
+            ),
+            "Positions:",
+        ]
+        for position in positions[:10]:
+            gain = position.get("unrealized_gain_loss")
+            gain_pct = position.get("unrealized_gain_loss_pct")
+            gain_text = "quote unavailable"
+            if gain is not None:
+                gain_text = f"gain/loss {gain:,.2f} ({((gain_pct or 0.0) * 100):.2f}%)"
+            lines.append(
+                f"- {position.get('ticker')} ({position.get('asset_type')}): {position.get('quantity')} units at avg cost {(position.get('avg_cost_basis') or 0.0):,.2f}, "
+                f"current price {(position.get('current_price') or 0.0):,.2f}, {gain_text}."
+            )
+        extra = len(positions) - min(len(positions), 10)
+        if extra > 0:
+            lines.append(f"- {extra} additional position(s) omitted for brevity.")
+        return "\n".join(lines)
+
+    return ""
 
 
 def _extract_ticker(question: str) -> Optional[str]:
@@ -1379,6 +1590,11 @@ def _build_plan(question: str) -> Dict[str, Any]:
         compare=compare,
         response_mode=response_mode,
     )
+    use_portfolio, portfolio_reason = _should_use_portfolio(
+        question,
+        compare=compare,
+        response_mode=response_mode,
+    )
     if use_favorites and not compare and _is_favorites_list_question(question):
         actions = ["company_snapshot", "pe"]
 
@@ -1390,6 +1606,8 @@ def _build_plan(question: str) -> Dict[str, Any]:
         "response_mode": response_mode,
         "use_favorites": use_favorites,
         "favorites_reason": favorites_reason,
+        "use_portfolio": use_portfolio,
+        "portfolio_reason": portfolio_reason,
     }
 
 
@@ -2053,9 +2271,13 @@ def _answer_question(
     compare_mode = bool(plan.get("compare"))
     use_favorites = bool(plan.get("use_favorites"))
     favorites_reason = plan.get("favorites_reason") if isinstance(plan.get("favorites_reason"), str) else None
+    use_portfolio = bool(plan.get("use_portfolio"))
+    portfolio_reason = plan.get("portfolio_reason") if isinstance(plan.get("portfolio_reason"), str) else None
     favorites_total = 0
     favorites_truncated = False
     favorites_scope_limit = _favorites_scope_limit(actions)
+    portfolio_total_positions = 0
+    portfolio_truncated = False
     used_context_company = False
     context_source: Optional[str] = None
     context_candidate: Optional[str] = None
@@ -2098,6 +2320,107 @@ def _answer_question(
 
     can_execute_sql = hasattr(db, "execute")
     allow_llm_render = can_execute_sql
+
+    portfolio_positions: List[PortfolioPosition] = []
+    portfolio_overview: Optional[Dict[str, Any]] = None
+    if can_execute_sql and use_portfolio:
+        portfolio_positions = _load_portfolio_positions(db)
+        portfolio_total_positions = len(portfolio_positions)
+        if portfolio_total_positions == 0:
+            return QAResponse(
+                answer="No portfolio positions are currently saved in watchTower, so I do not have holdings data to use for this question.",
+                citations=["portfolio_positions"],
+                news=[],
+                data={
+                    "plan": {
+                        "companies_requested": plan.get("companies", []),
+                        "companies_resolved": [],
+                        "unresolved_companies": [],
+                        "actions": actions,
+                        "years": years,
+                        "compare": compare_mode,
+                        "response_mode": response_mode,
+                        "resolver_diagnostics": resolver_diagnostics,
+                        "use_favorites": use_favorites,
+                        "favorites_reason": favorites_reason,
+                        "favorites_total": favorites_total,
+                        "favorites_truncated": favorites_truncated,
+                        "use_portfolio": True,
+                        "portfolio_reason": portfolio_reason,
+                        "portfolio_total_positions": 0,
+                    },
+                    "queries": [],
+                    "sources": ["portfolio_positions"],
+                    "news": [],
+                },
+                trace=[
+                    "Portfolio context requested.",
+                    f"Portfolio reason: {portfolio_reason or 'unspecified'}.",
+                    "No portfolio positions are currently saved.",
+                ],
+            )
+        portfolio_overview = _serialize_portfolio_positions(db, portfolio_positions).model_dump()
+        requested_tickers = [company.ticker for company in companies] or [
+            ticker for ticker in plan.get("companies", []) if isinstance(ticker, str)
+        ]
+        direct_portfolio_answer = _build_portfolio_answer(
+            question,
+            portfolio_overview,
+            requested_tickers=requested_tickers,
+        )
+        if direct_portfolio_answer:
+            citations = {"portfolio_positions", "companies"}
+            if portfolio_overview.get("summary", {}).get("has_unpriced_positions"):
+                citations.add("prices_annual")
+            return QAResponse(
+                answer=direct_portfolio_answer,
+                citations=sorted(citations),
+                news=[],
+                data={
+                    "plan": {
+                        "companies_requested": plan.get("companies", []),
+                        "companies_resolved": [c.ticker for c in companies],
+                        "unresolved_companies": unresolved,
+                        "actions": actions,
+                        "years": years,
+                        "compare": compare_mode,
+                        "response_mode": response_mode,
+                        "resolver_diagnostics": resolver_diagnostics,
+                        "use_favorites": use_favorites,
+                        "favorites_reason": favorites_reason,
+                        "favorites_total": favorites_total,
+                        "favorites_truncated": favorites_truncated,
+                        "use_portfolio": True,
+                        "portfolio_reason": portfolio_reason,
+                        "portfolio_total_positions": portfolio_total_positions,
+                    },
+                    "queries": [],
+                    "sources": sorted(citations),
+                    "news": [],
+                    "portfolio": portfolio_overview,
+                },
+                trace=[
+                    f"Portfolio context applied ({portfolio_reason or 'unspecified'}).",
+                    f"Portfolio positions loaded: {portfolio_total_positions}.",
+                ],
+            )
+
+    if not companies and use_portfolio and portfolio_positions:
+        portfolio_companies = [position.company for position in portfolio_positions if position.company]
+        if len(portfolio_companies) > favorites_scope_limit:
+            portfolio_truncated = True
+            portfolio_companies = portfolio_companies[:favorites_scope_limit]
+        companies = portfolio_companies
+        unresolved = []
+        resolver_diagnostics.append(
+            {
+                "candidate": "portfolio",
+                "resolved_ticker": ",".join([c.ticker for c in companies]),
+                "confidence": 1.0,
+                "reason": f"portfolio_context:{portfolio_reason or 'unspecified'}",
+                "decision": "resolved",
+            }
+        )
 
     if not companies and use_favorites:
         favorites = _load_favorite_companies(db) if can_execute_sql else []
@@ -2210,6 +2533,9 @@ def _answer_question(
                                 "favorites_reason": favorites_reason,
                                 "favorites_total": favorites_total,
                                 "favorites_truncated": favorites_truncated,
+                                "use_portfolio": use_portfolio,
+                                "portfolio_reason": portfolio_reason,
+                                "portfolio_total_positions": portfolio_total_positions,
                             },
                             "queries": query_trace,
                             "sources": sorted(list(_extract_tables_from_sql(sql_bounded))),
@@ -2276,6 +2602,9 @@ def _answer_question(
                         "favorites_reason": favorites_reason,
                         "favorites_total": favorites_total,
                         "favorites_truncated": favorites_truncated,
+                        "use_portfolio": use_portfolio,
+                        "portfolio_reason": portfolio_reason,
+                        "portfolio_total_positions": portfolio_total_positions,
                     },
                     "queries": [],
                     "sources": used_sources,
@@ -2340,6 +2669,14 @@ def _answer_question(
             trace.append(
                 f"Favorites scope limited to first {len(companies)} of {favorites_total} assets for this query."
             )
+    if use_portfolio and companies:
+        trace.append(
+            f"Applied portfolio context ({portfolio_reason or 'unspecified'}): using {len(companies)} portfolio holdings."
+        )
+        if portfolio_truncated:
+            trace.append(
+                f"Portfolio scope limited to first {len(companies)} of {portfolio_total_positions} holdings for this query."
+            )
     if 'trace_sql' in locals():
         trace.extend(trace_sql)
     if unresolved:
@@ -2380,6 +2717,9 @@ def _answer_question(
         "favorites_reason": favorites_reason,
         "favorites_total": favorites_total,
         "favorites_truncated": favorites_truncated,
+        "use_portfolio": use_portfolio,
+        "portfolio_reason": portfolio_reason,
+        "portfolio_total_positions": portfolio_total_positions,
     }
 
     missing_for_comparison: List[str] = []
@@ -2433,11 +2773,18 @@ def _answer_question(
         citations.add("general_context")
     if use_favorites:
         citations.add("favorite_companies")
+    if use_portfolio:
+        citations.add("portfolio_positions")
     news_items = _collect_news_items(results_by_company, max_items=5)
     if use_favorites and favorites_truncated:
         answer = (
             f"{answer}\n\nFavorites scope note:\n"
             f"- This query used the first {len(companies)} of {favorites_total} favorite assets."
+        )
+    if use_portfolio and portfolio_truncated:
+        answer = (
+            f"{answer}\n\nPortfolio scope note:\n"
+            f"- This query used the first {len(companies)} of {portfolio_total_positions} portfolio holdings."
         )
     if use_favorites and _is_favorites_list_question(question):
         answer = f"Favorite assets currently tracked:\n{answer}"

@@ -75,20 +75,25 @@ Phase 3 verification note:
 
 ## Phase 4 — Portfolio-Aware QA
 
-- [ ] Extend QA to use portfolio context in addition to watchlist context.
-- [ ] Support mixed-asset portfolio prompts through the existing QA surface only.
-- [ ] Add ETF-aware response behavior that avoids unsupported company-fundamental claims.
-- [ ] Add ranking/summary answers such as biggest gainers/losers and allocation concentration.
-- [ ] Keep OpenClaw integration on `/openclaw/qa` only.
+- [x] Extend QA to use portfolio context in addition to watchlist context.
+- [x] Support mixed-asset portfolio prompts through the existing QA surface only.
+- [x] Add ETF-aware response behavior that avoids unsupported company-fundamental claims.
+- [x] Add ranking/summary answers such as biggest gainers/losers and allocation concentration.
+- [x] Keep OpenClaw integration on `/openclaw/qa` only.
 
 **Phase 4 Tests**
-- [ ] Unit: explicit ticker/symbol still overrides portfolio fallback.
-- [ ] Unit: ETF-aware QA refuses unsupported company-fundamental answers cleanly.
-- [ ] Integration: "tell me about my portfolio" returns mixed holdings summary.
-- [ ] Integration: "what is my gain on VGT?" returns the correct unrealized gain/loss.
-- [ ] Integration: "compare my ETF holdings to my stock holdings" returns grouped portfolio context.
-- [ ] Manual: OpenClaw can ask portfolio questions without any new endpoint.
+- [x] Unit: explicit ticker/symbol still overrides portfolio fallback.
+- [x] Unit: ETF-aware QA refuses unsupported company-fundamental answers cleanly.
+- [x] Integration: "tell me about my portfolio" returns mixed holdings summary.
+- [x] Integration: "what is my gain on VGT?" returns the correct unrealized gain/loss.
+- [x] Integration: "compare my ETF holdings to my stock holdings" returns grouped portfolio context.
+- [x] Manual: OpenClaw can ask portfolio questions without any new endpoint.
+
+Phase 4 verification note:
+- QA regression tests cover mixed-holdings summary, explicit gain on `VGT`, and ETF-vs-stock grouping.
+- Live `POST /qa` smoke tests passed for portfolio summary, gain, and grouping prompts.
+- Live `POST /openclaw/qa` smoke test passed with a temporary API key, then the key was revoked.
 
 **Commit / Push Gate**
-- [ ] Commit after Phase 4 tests pass.
-- [ ] Push after regression verification across WatchTower assistant and OpenClaw QA flows.
+- [x] Commit after Phase 4 tests pass.
+- [x] Push after regression verification across WatchTower assistant and OpenClaw QA flows.

@@ -28,7 +28,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.core.db import Base
-from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment, FavoriteCompany
+from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment, FavoriteCompany, PortfolioPosition
 
 
 def test_extract_ticker_skips_common_words():
@@ -282,13 +282,15 @@ def test_build_plan_explicit_favorites_sets_use_favorites():
 def test_build_plan_tell_me_about_my_portfolio_uses_favorites():
     plan = _build_plan("tell me about my portfolio")
     assert plan["companies"] == []
-    assert plan["use_favorites"] is True
+    assert plan["use_portfolio"] is True
+    assert plan["portfolio_reason"] == "explicit_portfolio_language"
 
 
 def test_build_plan_explicit_ticker_overrides_favorites_fallback():
     plan = _build_plan("what is AAPL p/e in my portfolio?")
     assert "AAPL" in [c.upper() for c in plan["companies"]]
     assert plan["use_favorites"] is False
+    assert plan["use_portfolio"] is True
 
 
 def test_extract_tickers_ignores_plain_words_in_news_question():
@@ -921,6 +923,110 @@ def test_answer_question_favorites_scope_note_when_truncated(monkeypatch):
         assert response.data["plan"]["favorites_truncated"] is True
         assert response.data["plan"]["favorites_total"] == 12
         assert "Favorites scope note:" in response.answer
+
+
+def test_answer_question_portfolio_summary_returns_mixed_holdings(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        aapl = Company(ticker="AAPL", name="Apple Inc.", asset_type="equity")
+        vgt = Company(ticker="VGT", name="VGT ETF", asset_type="etf")
+        db.add_all([aapl, vgt])
+        db.commit()
+        db.refresh(aapl)
+        db.refresh(vgt)
+        db.add_all(
+            [
+                PortfolioPosition(company_id=aapl.id, quantity=10, avg_cost_basis=150),
+                PortfolioPosition(company_id=vgt.id, quantity=5, avg_cost_basis=400),
+            ]
+        )
+        db.commit()
+
+        monkeypatch.setattr("app.routers.portfolio.fetch_alpha_quotes", lambda tickers: {
+            "AAPL": {"price": 200.0, "source": "alpha_vantage", "status": "live"},
+            "VGT": {"price": 450.0, "source": "alpha_vantage", "status": "live"},
+        })
+
+        response = _answer_question("tell me about my portfolio", db=db)
+        assert "Portfolio summary:" in response.answer
+        assert "AAPL (equity)" in response.answer
+        assert "VGT (etf)" in response.answer
+        assert response.data["plan"]["use_portfolio"] is True
+        assert response.data["plan"]["portfolio_total_positions"] == 2
+        assert "portfolio_positions" in response.citations
+
+
+def test_answer_question_portfolio_gain_for_explicit_symbol(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        vgt = Company(ticker="VGT", name="VGT ETF", asset_type="etf")
+        db.add(vgt)
+        db.commit()
+        db.refresh(vgt)
+        db.add(PortfolioPosition(company_id=vgt.id, quantity=5, avg_cost_basis=400))
+        db.commit()
+
+        monkeypatch.setattr("app.routers.portfolio.fetch_alpha_quotes", lambda tickers: {
+            "VGT": {"price": 450.0, "source": "alpha_vantage", "status": "live"},
+        })
+
+        response = _answer_question("what is my gain on VGT?", db=db)
+        assert "VGT is up 250.00" in response.answer
+        assert response.data["plan"]["use_portfolio"] is True
+        assert "portfolio_positions" in response.citations
+
+
+def test_answer_question_compares_etf_holdings_to_stock_holdings(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        aapl = Company(ticker="AAPL", name="Apple Inc.", asset_type="equity")
+        vgt = Company(ticker="VGT", name="VGT ETF", asset_type="etf")
+        db.add_all([aapl, vgt])
+        db.commit()
+        db.refresh(aapl)
+        db.refresh(vgt)
+        db.add_all(
+            [
+                PortfolioPosition(company_id=aapl.id, quantity=10, avg_cost_basis=150),
+                PortfolioPosition(company_id=vgt.id, quantity=5, avg_cost_basis=400),
+            ]
+        )
+        db.commit()
+
+        monkeypatch.setattr("app.routers.portfolio.fetch_alpha_quotes", lambda tickers: {
+            "AAPL": {"price": 200.0, "source": "alpha_vantage", "status": "live"},
+            "VGT": {"price": 450.0, "source": "alpha_vantage", "status": "live"},
+        })
+
+        response = _answer_question("compare my ETF holdings to my stock holdings", db=db)
+        assert "Portfolio asset mix:" in response.answer
+        assert "ETF holdings" in response.answer
+        assert "Stock holdings" in response.answer
+        assert response.data["plan"]["use_portfolio"] is True
 
 
 def test_answer_question_uses_context_company_for_transcript_followup(monkeypatch):
