@@ -13,6 +13,7 @@ class CompanyOut(BaseModel):
     id: int
     ticker: str
     name: Optional[str] = None
+    asset_type: str = "equity"
     cik: Optional[int] = None
     sic: Optional[str] = None
     industry_name: Optional[str] = None
@@ -198,6 +199,7 @@ class CompanyProfileOut(BaseModel):
 class FavoriteCompanyItem(BaseModel):
     company_id: int
     ticker: str
+    asset_type: str = "equity"
     name: Optional[str] = None
     industry: Optional[str] = None
     price: Optional[float] = None

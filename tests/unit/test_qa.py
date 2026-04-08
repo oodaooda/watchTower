@@ -728,8 +728,8 @@ def test_answer_question_uses_favorites_fallback_and_reports_plan(monkeypatch):
         monkeypatch.setattr("app.routers.qa._execute_action", fake_execute_action)
         monkeypatch.setattr("app.routers.qa._render_answer_with_llm", lambda **kwargs: kwargs["fallback_answer"])
 
-        response = _answer_question("what are my favorite companies?", db=db)
-        assert "Favorite companies currently tracked:" in response.answer
+        response = _answer_question("what are my favorite assets?", db=db)
+        assert "Favorite assets currently tracked:" in response.answer
         assert "Apple Inc. (AAPL)" in response.answer
         assert "Microsoft Corporation (MSFT)" in response.answer
         assert response.data["plan"]["use_favorites"] is True
@@ -766,7 +766,7 @@ def test_answer_question_returns_clear_message_when_favorites_are_empty(monkeypa
         )
 
         response = _answer_question("what are my favorites?", db=db)
-        assert "No favorite companies are currently saved" in response.answer
+        assert "No favorite assets are currently saved" in response.answer
         assert response.data["plan"]["favorites_total"] == 0
         assert response.citations == ["favorite_companies"]
 

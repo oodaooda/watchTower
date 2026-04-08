@@ -4,23 +4,27 @@ This checklist covers ETF-capable watchlist tracking plus a new position-level p
 
 ## Phase 1 — Multi-Asset Universe and Watchlist
 
-- [ ] Define asset-level contract for stocks and ETFs.
-- [ ] Add or document `asset_type` support for tracked symbols.
-- [ ] Ensure ETF-like symbols can exist in the tracked asset universe.
-- [ ] Update watchlist/favorites flows to support ETFs as first-class tracked assets.
-- [ ] Define fallback behavior for assets that do not have company-fundamental data.
-- [ ] Update QA/watchlist docs to reflect mixed-asset support.
+- [x] Define asset-level contract for stocks and ETFs.
+- [x] Add or document `asset_type` support for tracked symbols.
+- [x] Ensure ETF-like symbols can exist in the tracked asset universe.
+- [x] Update watchlist/favorites flows to support ETFs as first-class tracked assets.
+- [x] Define fallback behavior for assets that do not have company-fundamental data.
+- [x] Update QA/watchlist docs to reflect mixed-asset support.
 
 **Phase 1 Tests**
-- [ ] Unit: asset classification distinguishes equities vs ETFs correctly for supported symbols.
-- [ ] Unit: watchlist/favorites serialization handles ETF assets without requiring company fundamentals.
-- [ ] Integration: add/list/remove ETF watchlist asset succeeds.
-- [ ] Integration: QA can answer "what are my favorite assets?" when ETFs are present.
+- [x] Unit: asset classification distinguishes equities vs ETFs correctly for supported symbols.
+- [x] Unit: watchlist/favorites serialization handles ETF assets without requiring company fundamentals.
+- [x] Integration: add/list/remove ETF watchlist asset succeeds.
+- [x] Integration: QA can answer "what are my favorite assets?" when ETFs are present.
 - [ ] Manual: mixed stock/ETF watchlist renders correctly in the UI.
 
+Phase 1 verification note:
+- Live API smoke test passed for `POST /favorites`, `GET /favorites`, and `DELETE /favorites/VGT`.
+- Repo-wide frontend build is currently blocked by pre-existing TypeScript errors outside the favorites flow, so browser-level verification is deferred until the dedicated UI phase.
+
 **Commit / Push Gate**
-- [ ] Commit after Phase 1 tests pass.
-- [ ] Push after API and UI verification for mixed-asset watchlist behavior.
+- [x] Commit after Phase 1 tests pass.
+- [x] Push after API verification for mixed-asset watchlist behavior. Full browser verification remains deferred to Phase 3.
 
 ## Phase 2 — Portfolio Positions and Gain/Loss Math
 

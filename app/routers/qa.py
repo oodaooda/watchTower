@@ -2104,7 +2104,7 @@ def _answer_question(
         favorites_total = len(favorites)
         if favorites_total == 0:
             return QAResponse(
-                answer="No favorite companies are currently saved in watchTower, so I do not have a portfolio context to use for this question.",
+                answer="No favorite assets are currently saved in watchTower, so I do not have a portfolio context to use for this question.",
                 citations=["favorite_companies"],
                 news=[],
                 data={
@@ -2334,11 +2334,11 @@ def _answer_question(
         trace.append(f"Applied context company fallback ({context_source}): {context_candidate}.")
     if use_favorites:
         trace.append(
-            f"Applied favorites fallback ({favorites_reason or 'unspecified'}): using {len(companies)} favorite companies."
+            f"Applied favorites fallback ({favorites_reason or 'unspecified'}): using {len(companies)} favorite assets."
         )
         if favorites_truncated:
             trace.append(
-                f"Favorites scope limited to first {len(companies)} of {favorites_total} companies for this query."
+                f"Favorites scope limited to first {len(companies)} of {favorites_total} assets for this query."
             )
     if 'trace_sql' in locals():
         trace.extend(trace_sql)
@@ -2437,10 +2437,10 @@ def _answer_question(
     if use_favorites and favorites_truncated:
         answer = (
             f"{answer}\n\nFavorites scope note:\n"
-            f"- This query used the first {len(companies)} of {favorites_total} favorite companies."
+            f"- This query used the first {len(companies)} of {favorites_total} favorite assets."
         )
     if use_favorites and _is_favorites_list_question(question):
-        answer = f"Favorite companies currently tracked:\n{answer}"
+        answer = f"Favorite assets currently tracked:\n{answer}"
     if missing_for_comparison:
         answer = (
             f"{answer}\n\nWhat is missing to complete comparison:\n"

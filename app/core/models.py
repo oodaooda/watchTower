@@ -38,6 +38,7 @@ class Company(Base):
     id = Column(Integer, primary_key=True)
     ticker = Column(String, index=True, unique=False)
     name = Column(String)
+    asset_type = Column(String, nullable=False, default="equity", server_default="equity")
     cik = Column(BigInteger, index=True, unique=False)  # keep non-unique; SEC symbols can map oddly
     sic = Column(String, nullable=True)
     industry_name = Column(String, nullable=True)

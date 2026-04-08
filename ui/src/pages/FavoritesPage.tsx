@@ -6,6 +6,7 @@ import BackButton from "../components/BackButton";
 type Favorite = {
   company_id: number;
   ticker: string;
+  asset_type: string;
   name?: string | null;
   industry?: string | null;
   price?: number | null;
@@ -113,9 +114,9 @@ export default function FavoritesPage() {
         <div className="flex items-start gap-3">
           <BackButton />
           <div>
-            <h1 className="text-2xl font-bold">Favorite Companies</h1>
+            <h1 className="text-2xl font-bold">Favorite Assets</h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Track tickers with live price deltas (refreshes automatically every 60 seconds).
+              Track stocks and ETFs with live price deltas (refreshes automatically every 60 seconds).
             </p>
             <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{statusText}</div>
           </div>
@@ -125,7 +126,7 @@ export default function FavoritesPage() {
       <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2">
         <input
           className="h-9 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm uppercase"
-          placeholder="Add ticker (e.g., AAPL)"
+          placeholder="Add symbol (e.g., AAPL or VGT)"
           value={newTicker}
           maxLength={10}
           onChange={(e) => setNewTicker(e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ""))}
@@ -141,7 +142,8 @@ export default function FavoritesPage() {
           <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-3 py-3">Ticker</th>
-              <th className="px-3 py-3">Company</th>
+              <th className="px-3 py-3">Asset</th>
+              <th className="px-3 py-3">Type</th>
               <th className="px-3 py-3">Industry</th>
               <th className="px-3 py-3 text-right">Price</th>
               <th className="px-3 py-3 text-right">Change</th>
@@ -155,8 +157,8 @@ export default function FavoritesPage() {
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-center text-zinc-500" colSpan={10}>
-                  {loading ? "Loading favorites…" : "No favorites yet — add a ticker above."}
+                <td className="px-3 py-6 text-center text-zinc-500" colSpan={11}>
+                  {loading ? "Loading favorites…" : "No favorites yet — add a stock or ETF above."}
                 </td>
               </tr>
             ) : (
@@ -166,14 +168,19 @@ export default function FavoritesPage() {
                   className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
                 >
                   <td className="px-3 py-3 font-semibold">
-                    <Link
-                      to={`/companies/${item.ticker}/profile`}
-                      className="text-sky-600 hover:underline"
-                    >
-                      {item.ticker}
-                    </Link>
+                    {item.asset_type === "equity" ? (
+                      <Link
+                        to={`/companies/${item.ticker}/profile`}
+                        className="text-sky-600 hover:underline"
+                      >
+                        {item.ticker}
+                      </Link>
+                    ) : (
+                      <span>{item.ticker}</span>
+                    )}
                   </td>
                   <td className="px-3 py-3">{item.name || "—"}</td>
+                  <td className="px-3 py-3 uppercase">{item.asset_type || "—"}</td>
                   <td className="px-3 py-3">{item.industry || "—"}</td>
                   <td className="px-3 py-3 text-right">{formatCurrency(item.price)}</td>
                   <td className="px-3 py-3 text-right">

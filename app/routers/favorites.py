@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from typing import Dict, Optional, List, Iterable
 
-import time
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -20,6 +19,7 @@ from app.core.models import (
     PriceAnnual,
 )
 from app.core.schemas import FavoriteCompanyItem
+from app.services.assets import classify_asset_type, fetch_alpha_asset_overview, normalize_symbol
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
@@ -108,8 +108,43 @@ def _resolve_company(db: Session, ticker: str) -> Company | None:
     if not ticker:
         return None
     return db.execute(
-        select(Company).where(Company.ticker == ticker.upper())
+        select(Company).where(func.upper(Company.ticker) == normalize_symbol(ticker))
     ).scalar_one_or_none()
+
+
+def _find_or_create_asset(db: Session, ticker: str) -> Company | None:
+    normalized = normalize_symbol(ticker)
+    if not normalized:
+        return None
+
+    existing = _resolve_company(db, normalized)
+    if existing:
+        if not getattr(existing, "asset_type", None):
+            existing.asset_type = "equity"
+            db.commit()
+            db.refresh(existing)
+        return existing
+
+    overview = fetch_alpha_asset_overview(normalized)
+    if not overview:
+        return None
+
+    asset = Company(
+        ticker=normalized,
+        name=(overview.get("Name") or normalized).strip(),
+        asset_type=classify_asset_type(overview),
+        exchange=overview.get("Exchange"),
+        currency=overview.get("Currency") or "USD",
+        industry_name=overview.get("Industry"),
+        description=overview.get("Description"),
+        status="active",
+        is_tracked=True,
+        track_reason="favorite_asset",
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return asset
 
 
 def _serialize_favorite(
@@ -167,6 +202,7 @@ def _serialize_favorite(
     return FavoriteCompanyItem(
         company_id=co.id,
         ticker=co.ticker,
+        asset_type=getattr(co, "asset_type", None) or "equity",
         name=co.name,
         industry=co.industry_name,
         price=price,
@@ -199,13 +235,13 @@ def list_favorites(db: Session = Depends(get_db)):
 
 @router.post("", response_model=FavoriteCompanyItem)
 def add_favorite(payload: FavoriteCreate, db: Session = Depends(get_db)):
-    ticker = (payload.ticker or "").strip().upper()
+    ticker = normalize_symbol(payload.ticker)
     if not ticker:
         raise HTTPException(status_code=400, detail="Ticker is required")
 
-    company = _resolve_company(db, ticker)
+    company = _find_or_create_asset(db, ticker)
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Tracked asset not found")
 
     existing = db.execute(
         select(FavoriteCompany).where(FavoriteCompany.company_id == company.id)
@@ -215,7 +251,11 @@ def add_favorite(payload: FavoriteCreate, db: Session = Depends(get_db)):
         if payload.notes is not None and existing.notes != payload.notes:
             existing.notes = payload.notes
             db.commit()
-        serialized = _serialize_favorite(db, existing)
+        serialized = _serialize_favorite(
+            db,
+            existing,
+            _fetch_alpha_quotes([existing.company.ticker]) if existing.company else None,
+        )
         if serialized:
             return serialized
         raise HTTPException(status_code=500, detail="Unable to serialize favorite")
@@ -229,7 +269,11 @@ def add_favorite(payload: FavoriteCreate, db: Session = Depends(get_db)):
     db.add(fav)
     db.commit()
     db.refresh(fav)
-    serialized = _serialize_favorite(db, fav)
+    serialized = _serialize_favorite(
+        db,
+        fav,
+        _fetch_alpha_quotes([fav.company.ticker]) if fav.company else None,
+    )
     if serialized:
         return serialized
     raise HTTPException(status_code=500, detail="Unable to serialize favorite")
