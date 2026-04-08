@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import time
-from typing import Dict, Optional, List, Iterable
+from typing import Dict, List, Optional
 
-import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -19,12 +17,10 @@ from app.core.models import (
     PriceAnnual,
 )
 from app.core.schemas import FavoriteCompanyItem
-from app.services.assets import classify_asset_type, fetch_alpha_asset_overview, normalize_symbol
+from app.services.assets import find_or_create_asset, normalize_symbol, resolve_asset
+from app.services.quotes import coalesce, fetch_alpha_quotes, ratio, resolve_current_quote, to_float
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
-
-QUOTE_TTL = 30
-_QUOTE_CACHE: Dict[str, tuple[float, Dict[str, float | None]]] = {}
 
 
 class FavoriteCreate(BaseModel):
@@ -32,119 +28,8 @@ class FavoriteCreate(BaseModel):
     notes: Optional[str] = None
 
 
-def _coalesce(*vals):
-    for val in vals:
-        if val is not None:
-            return val
-    return None
-
-
-def _to_float(value):
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _ratio(a, b):
-    if a is None or b in (None, 0):
-        return None
-    try:
-        return float(a) / float(b)
-    except ZeroDivisionError:
-        return None
-
-
-def _fetch_alpha_quotes(tickers: Iterable[str]) -> Dict[str, Dict[str, float | None]]:
-    api_key = settings.alpha_vantage_api_key
-    if not api_key:
-        return {}
-
-    quotes: Dict[str, Dict[str, float | None]] = {}
-    now = time.time()
-    for sym in sorted({t.upper() for t in tickers if t}):
-        cached = _QUOTE_CACHE.get(sym)
-        if cached and now - cached[0] < QUOTE_TTL:
-            quotes[sym] = cached[1]
-            continue
-
-        params = {
-            "function": "GLOBAL_QUOTE",
-            "symbol": sym,
-            "apikey": api_key,
-        }
-        try:
-            resp = requests.get("https://www.alphavantage.co/query", params=params, timeout=15)
-            resp.raise_for_status()
-            payload = (resp.json() or {}).get("Global Quote") or {}
-            price = _to_float(payload.get("05. price"))
-            prev_close = _to_float(payload.get("08. previous close"))
-            change_pct = payload.get("10. change percent")
-            if isinstance(change_pct, str):
-                try:
-                    change_pct_val = float(change_pct.strip().strip("%")) / 100.0
-                except ValueError:
-                    change_pct_val = None
-            else:
-                change_pct_val = _to_float(change_pct if isinstance(change_pct, (int, float)) else None)
-            quote = {
-                "price": price,
-                "previous_close": prev_close,
-                "change_percent": change_pct_val,
-                "source": "alpha_vantage",
-            }
-            _QUOTE_CACHE[sym] = (now, quote)
-            quotes[sym] = quote
-        except Exception:
-            # leave quote missing; will fall back to cached/annual price
-            continue
-
-    return quotes
-
-
 def _resolve_company(db: Session, ticker: str) -> Company | None:
-    if not ticker:
-        return None
-    return db.execute(
-        select(Company).where(func.upper(Company.ticker) == normalize_symbol(ticker))
-    ).scalar_one_or_none()
-
-
-def _find_or_create_asset(db: Session, ticker: str) -> Company | None:
-    normalized = normalize_symbol(ticker)
-    if not normalized:
-        return None
-
-    existing = _resolve_company(db, normalized)
-    if existing:
-        if not getattr(existing, "asset_type", None):
-            existing.asset_type = "equity"
-            db.commit()
-            db.refresh(existing)
-        return existing
-
-    overview = fetch_alpha_asset_overview(normalized)
-    if not overview:
-        return None
-
-    asset = Company(
-        ticker=normalized,
-        name=(overview.get("Name") or normalized).strip(),
-        asset_type=classify_asset_type(overview),
-        exchange=overview.get("Exchange"),
-        currency=overview.get("Currency") or "USD",
-        industry_name=overview.get("Industry"),
-        description=overview.get("Description"),
-        status="active",
-        is_tracked=True,
-        track_reason="favorite_asset",
-    )
-    db.add(asset)
-    db.commit()
-    db.refresh(asset)
-    return asset
+    return resolve_asset(db, ticker)
 
 
 def _serialize_favorite(
@@ -176,26 +61,26 @@ def _serialize_favorite(
 
     quote = quote_map.get(co.ticker.upper()) if quote_map else None
 
-    price = _coalesce(quote and quote.get("price"), _to_float(getattr(price_row, "close_price", None)))
-    prev_close = _coalesce(
+    price = coalesce(quote and quote.get("price"), to_float(getattr(price_row, "close_price", None)))
+    prev_close = coalesce(
         quote and quote.get("previous_close"),
-        _to_float(getattr(price_row, "close_price", None)),
+        to_float(getattr(price_row, "close_price", None)),
     )
     if quote and quote.get("change_percent") is not None:
         change_pct = quote.get("change_percent")
     elif price is not None and prev_close not in (None, 0):
-        change_pct = _ratio(price - prev_close, prev_close)
+        change_pct = ratio(price - prev_close, prev_close)
     else:
         change_pct = None
 
-    shares = _to_float(getattr(financial, "shares_outstanding", None))
-    eps = _coalesce(
-        _to_float(getattr(metrics, "ttm_eps", None)),
-        _ratio(_to_float(getattr(financial, "net_income", None)), shares),
+    shares = to_float(getattr(financial, "shares_outstanding", None))
+    eps = coalesce(
+        to_float(getattr(metrics, "ttm_eps", None)),
+        ratio(to_float(getattr(financial, "net_income", None)), shares),
     )
-    pe = _coalesce(
-        _to_float(getattr(metrics, "pe_ttm", None)),
-        _ratio(price, eps) if price is not None and eps not in (None, 0) else None,
+    pe = coalesce(
+        to_float(getattr(metrics, "pe_ttm", None)),
+        ratio(price, eps) if price is not None and eps not in (None, 0) else None,
     )
     market_cap = price * shares if (price is not None and shares is not None) else None
 
@@ -223,7 +108,7 @@ def list_favorites(db: Session = Depends(get_db)):
         .order_by(FavoriteCompany.sort_order, FavoriteCompany.created_at)
     ).all()
 
-    quotes = _fetch_alpha_quotes(fav.company.ticker for fav in favorites if fav.company)
+    quotes = fetch_alpha_quotes(fav.company.ticker for fav in favorites if fav.company)
 
     items: List[FavoriteCompanyItem] = []
     for fav in favorites:
@@ -239,7 +124,7 @@ def add_favorite(payload: FavoriteCreate, db: Session = Depends(get_db)):
     if not ticker:
         raise HTTPException(status_code=400, detail="Ticker is required")
 
-    company = _find_or_create_asset(db, ticker)
+    company = find_or_create_asset(db, ticker, track_reason="favorite_asset")
     if not company:
         raise HTTPException(status_code=404, detail="Tracked asset not found")
 
@@ -254,7 +139,7 @@ def add_favorite(payload: FavoriteCreate, db: Session = Depends(get_db)):
         serialized = _serialize_favorite(
             db,
             existing,
-            _fetch_alpha_quotes([existing.company.ticker]) if existing.company else None,
+            fetch_alpha_quotes([existing.company.ticker]) if existing.company else None,
         )
         if serialized:
             return serialized
@@ -272,7 +157,7 @@ def add_favorite(payload: FavoriteCreate, db: Session = Depends(get_db)):
     serialized = _serialize_favorite(
         db,
         fav,
-        _fetch_alpha_quotes([fav.company.ticker]) if fav.company else None,
+        fetch_alpha_quotes([fav.company.ticker]) if fav.company else None,
     )
     if serialized:
         return serialized

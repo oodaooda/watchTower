@@ -28,23 +28,27 @@ Phase 1 verification note:
 
 ## Phase 2 — Portfolio Positions and Gain/Loss Math
 
-- [ ] Add position-level portfolio storage for global holdings.
-- [ ] Support quantity and average cost basis inputs.
-- [ ] Implement current quote resolution for both stocks and ETFs.
-- [ ] Calculate per-position market value, total cost basis, unrealized gain/loss, and unrealized gain/loss percent.
-- [ ] Add portfolio-level summary totals and allocation percentages.
-- [ ] Define behavior for positions with stale or missing quotes.
+- [x] Add position-level portfolio storage for global holdings.
+- [x] Support quantity and average cost basis inputs.
+- [x] Implement current quote resolution for both stocks and ETFs.
+- [x] Calculate per-position market value, total cost basis, unrealized gain/loss, and unrealized gain/loss percent.
+- [x] Add portfolio-level summary totals and allocation percentages.
+- [x] Define behavior for positions with stale or missing quotes.
 
 **Phase 2 Tests**
-- [ ] Unit: portfolio math calculates market value and unrealized gain/loss correctly.
-- [ ] Unit: missing-quote behavior is explicit and never treated as zero silently.
-- [ ] Integration: create/update/delete portfolio position succeeds.
-- [ ] Integration: mixed stock/ETF portfolio totals are returned correctly from the API.
+- [x] Unit: portfolio math calculates market value and unrealized gain/loss correctly.
+- [x] Unit: missing-quote behavior is explicit and never treated as zero silently.
+- [x] Integration: create/update/delete portfolio position succeeds.
+- [x] Integration: mixed stock/ETF portfolio totals are returned correctly from the API.
 - [ ] Manual: portfolio table shows current value and gains for a mixed sample portfolio.
 
+Phase 2 verification note:
+- Live API smoke test passed for `GET /portfolio`, `POST /portfolio`, `PUT /portfolio/VGT`, and cleanup via `DELETE`.
+- Browser-level portfolio table verification is deferred to Phase 3 because that UI does not exist yet.
+
 **Commit / Push Gate**
-- [ ] Commit after Phase 2 tests pass.
-- [ ] Push after verifying API payloads and portfolio totals in the UI.
+- [x] Commit after Phase 2 tests pass.
+- [x] Push after verifying API payloads for mixed stock/ETF portfolio totals. UI rendering verification remains part of Phase 3.
 
 ## Phase 3 — Portfolio UI and Editing Workflow
 

@@ -439,6 +439,20 @@ class FavoriteCompany(Base):
     company = relationship("Company")
 
 
+class PortfolioPosition(Base):
+    __tablename__ = "portfolio_positions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), unique=True, nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(20, 6), nullable=False)
+    avg_cost_basis: Mapped[float] = mapped_column(Numeric(20, 6), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    company = relationship("Company")
+
+
 class CompanyRiskMetric(Base):
     __tablename__ = "company_risk_metrics"
 

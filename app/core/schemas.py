@@ -211,6 +211,54 @@ class FavoriteCompanyItem(BaseModel):
     source: Optional[str] = None
 
 
+class PortfolioPositionIn(BaseModel):
+    ticker: str
+    quantity: float
+    avg_cost_basis: float
+    notes: Optional[str] = None
+
+
+class PortfolioPositionUpdate(BaseModel):
+    quantity: Optional[float] = None
+    avg_cost_basis: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class PortfolioPositionItem(BaseModel):
+    position_id: int
+    company_id: int
+    ticker: str
+    asset_type: str = "equity"
+    name: Optional[str] = None
+    industry: Optional[str] = None
+    quantity: float
+    avg_cost_basis: float
+    total_cost_basis: float
+    current_price: Optional[float] = None
+    market_value: Optional[float] = None
+    unrealized_gain_loss: Optional[float] = None
+    unrealized_gain_loss_pct: Optional[float] = None
+    portfolio_weight: Optional[float] = None
+    price_status: str = "unavailable"
+    price_source: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PortfolioSummary(BaseModel):
+    total_cost_basis: float
+    total_market_value: Optional[float] = None
+    total_unrealized_gain_loss: Optional[float] = None
+    total_unrealized_gain_loss_pct: Optional[float] = None
+    has_unpriced_positions: bool = False
+    priced_positions: int = 0
+    unpriced_positions: int = 0
+
+
+class PortfolioOverview(BaseModel):
+    summary: PortfolioSummary
+    positions: List[PortfolioPositionItem] = Field(default_factory=list)
+
+
 # ---------- Modeling ----------
 class ModelingAssumptionOut(BaseModel):
     scenario: str

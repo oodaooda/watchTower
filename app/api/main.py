@@ -18,6 +18,7 @@ from app.routers import (
     pharma,
     universe,
     favorites,
+    portfolio,
     modeling,
     qa,
     openclaw,
@@ -95,6 +96,7 @@ app.include_router(prices.router)
 app.include_router(pharma.router)
 app.include_router(universe.router)
 app.include_router(favorites.router)
+app.include_router(portfolio.router)
 app.include_router(modeling.router)
 app.include_router(qa.router)
 app.include_router(openclaw.router)
@@ -117,6 +119,7 @@ v1.include_router(prices.router)
 v1.include_router(pharma.router)
 v1.include_router(universe.router)
 v1.include_router(favorites.router)
+v1.include_router(portfolio.router)
 v1.include_router(modeling.router)
 v1.include_router(qa.router)
 v1.include_router(openclaw.router)

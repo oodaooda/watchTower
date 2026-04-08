@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import requests
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.models import Company
 
 ALPHA_OVERVIEW_URL = "https://www.alphavantage.co/query"
 
@@ -97,3 +100,47 @@ def classify_asset_type(overview: dict[str, Any] | None) -> str:
     if "arca" in exchange and "fund" in description:
         return "etf"
     return "equity"
+
+
+def resolve_asset(db: Session, ticker: str) -> Company | None:
+    normalized = normalize_symbol(ticker)
+    if not normalized:
+        return None
+    return db.execute(
+        select(Company).where(func.upper(Company.ticker) == normalized)
+    ).scalar_one_or_none()
+
+
+def find_or_create_asset(db: Session, ticker: str, *, track_reason: str = "portfolio_asset") -> Company | None:
+    normalized = normalize_symbol(ticker)
+    if not normalized:
+        return None
+
+    existing = resolve_asset(db, normalized)
+    if existing:
+        if not getattr(existing, "asset_type", None):
+            existing.asset_type = "equity"
+            db.commit()
+            db.refresh(existing)
+        return existing
+
+    overview = fetch_alpha_asset_overview(normalized)
+    if not overview:
+        return None
+
+    asset = Company(
+        ticker=normalized,
+        name=(overview.get("Name") or normalized).strip(),
+        asset_type=classify_asset_type(overview),
+        exchange=overview.get("Exchange"),
+        currency=overview.get("Currency") or "USD",
+        industry_name=overview.get("Industry"),
+        description=overview.get("Description"),
+        status="active",
+        is_tracked=True,
+        track_reason=track_reason,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return asset

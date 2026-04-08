@@ -39,8 +39,7 @@ def test_add_list_and_remove_etf_favorite(monkeypatch):
     client, SessionLocal = _build_test_client()
 
     monkeypatch.setattr(
-        favorites_router,
-        "fetch_alpha_asset_overview",
+        "app.services.assets.fetch_alpha_asset_overview",
         lambda symbol: {
             "Symbol": symbol,
             "Name": "Vanguard Information Technology ETF",
@@ -52,7 +51,7 @@ def test_add_list_and_remove_etf_favorite(monkeypatch):
     )
     monkeypatch.setattr(
         favorites_router,
-        "_fetch_alpha_quotes",
+        "fetch_alpha_quotes",
         lambda tickers: {
             "VGT": {
                 "price": 612.34,
