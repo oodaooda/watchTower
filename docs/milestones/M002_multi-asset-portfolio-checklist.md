@@ -52,11 +52,11 @@ Phase 2 verification note:
 
 ## Phase 3 — Portfolio UI and Editing Workflow
 
-- [ ] Add portfolio UI surface distinct from the watchlist/favorites tab.
-- [ ] Support add, edit, and remove for portfolio positions.
-- [ ] Show per-position fields: symbol, asset type, quantity, cost basis, price, market value, gain/loss, gain/loss percent.
-- [ ] Show portfolio-level totals and weights.
-- [ ] Surface quote freshness or stale-price state where applicable.
+- [x] Add portfolio UI surface distinct from the watchlist/favorites tab.
+- [x] Support add, edit, and remove for portfolio positions.
+- [x] Show per-position fields: symbol, asset type, quantity, cost basis, price, market value, gain/loss, gain/loss percent.
+- [x] Show portfolio-level totals and weights.
+- [x] Surface quote freshness or stale-price state where applicable.
 
 **Phase 3 Tests**
 - [ ] Integration: portfolio UI persists position edits correctly.
@@ -64,9 +64,14 @@ Phase 2 verification note:
 - [ ] Manual: add/update/remove flows behave correctly for both stocks and ETFs.
 - [ ] Manual: stale quote state is visible and understandable.
 
+Phase 3 verification note:
+- File-scoped TypeScript check passed for `ui/src/lib/api.ts` and `ui/src/pages/PortfolioPage.tsx`.
+- `esbuild` successfully bundled `ui/src/pages/PortfolioPage.tsx`.
+- Full frontend build remains blocked by pre-existing TypeScript errors outside the portfolio files, so browser-level verification remains pending.
+
 **Commit / Push Gate**
-- [ ] Commit after Phase 3 tests pass.
-- [ ] Push after manual UI verification for add/edit/remove and totals rendering.
+- [x] Commit after Phase 3 implementation and slice-level verification.
+- [x] Push after portfolio route/page wiring and targeted UI verification. Full browser validation remains pending.
 
 ## Phase 4 — Portfolio-Aware QA
 

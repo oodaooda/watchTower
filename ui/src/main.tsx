@@ -16,6 +16,7 @@ import PharmaDashboardPage from "./pages/PharmaDashboardPage";
 import PharmaCompanyPage from "./pages/PharmaCompanyPage";
 import UniverseSyncPage from "./pages/UniverseSyncPage";
 import FavoritesPage from "./pages/FavoritesPage";
+import PortfolioPage from "./pages/PortfolioPage";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -37,6 +38,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="pharma/:identifier" element={<PharmaCompanyPage />} />
           <Route path="universe" element={<UniverseSyncPage />} />
           <Route path="favorites" element={<FavoritesPage />} />
+          <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="finance-university" element={<FinanceUniversityPage />} />
           <Route path="data-assistant" element={<DataAssistantPage />} />
           <Route path="usage" element={<UsagePage />} />

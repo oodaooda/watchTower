@@ -363,6 +363,87 @@ export async function askDataAssistant(
   return res.json();
 }
 
+// -------- Portfolio --------
+
+export type PortfolioPosition = {
+  position_id: number;
+  company_id: number;
+  ticker: string;
+  asset_type: string;
+  name?: string | null;
+  industry?: string | null;
+  quantity: number;
+  avg_cost_basis: number;
+  total_cost_basis: number;
+  current_price?: number | null;
+  market_value?: number | null;
+  unrealized_gain_loss?: number | null;
+  unrealized_gain_loss_pct?: number | null;
+  portfolio_weight?: number | null;
+  price_status: string;
+  price_source?: string | null;
+  notes?: string | null;
+};
+
+export type PortfolioSummaryOut = {
+  total_cost_basis: number;
+  total_market_value?: number | null;
+  total_unrealized_gain_loss?: number | null;
+  total_unrealized_gain_loss_pct?: number | null;
+  has_unpriced_positions: boolean;
+  priced_positions: number;
+  unpriced_positions: number;
+};
+
+export type PortfolioOverviewOut = {
+  summary: PortfolioSummaryOut;
+  positions: PortfolioPosition[];
+};
+
+export type PortfolioPositionIn = {
+  ticker: string;
+  quantity: number;
+  avg_cost_basis: number;
+  notes?: string | null;
+};
+
+export async function fetchPortfolio(): Promise<PortfolioOverviewOut> {
+  const res = await fetch(`${API_BASE}/portfolio`);
+  if (!res.ok) throw new Error(`portfolio ${res.status}`);
+  return res.json();
+}
+
+export async function createPortfolioPosition(payload: PortfolioPositionIn): Promise<PortfolioOverviewOut> {
+  const res = await fetch(`${API_BASE}/portfolio`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`portfolio/create ${res.status}`);
+  return res.json();
+}
+
+export async function updatePortfolioPosition(
+  ticker: string,
+  payload: Partial<Omit<PortfolioPositionIn, "ticker">>,
+): Promise<PortfolioOverviewOut> {
+  const res = await fetch(`${API_BASE}/portfolio/${encodeURIComponent(ticker)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`portfolio/update ${res.status}`);
+  return res.json();
+}
+
+export async function deletePortfolioPosition(ticker: string): Promise<PortfolioOverviewOut> {
+  const res = await fetch(`${API_BASE}/portfolio/${encodeURIComponent(ticker)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`portfolio/delete ${res.status}`);
+  return res.json();
+}
+
 // -------- Settings (OpenClaw keys) --------
 
 export type SettingsOut = {
