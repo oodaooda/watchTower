@@ -222,6 +222,7 @@ export type ModelingQuarter = {
 
 export type ModelingAnnual = {
   fiscal_year: number;
+  fiscal_period?: string | null;
   revenue?: number | null;
   cost_of_revenue?: number | null;
   gross_profit?: number | null;

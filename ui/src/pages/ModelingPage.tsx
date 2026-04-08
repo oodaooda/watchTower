@@ -143,6 +143,18 @@ const kpiFields: Array<{ key: keyof ModelingKPI; label: string }> = [
   { key: "churn_pct", label: "Churn %" },
 ];
 
+type KpiTableRow = {
+  fiscal_year: number;
+  fiscal_period: string;
+  mau?: number | null;
+  dau?: number | null;
+  paid_subs?: number | null;
+  paid_conversion_pct?: number | null;
+  arpu?: number | null;
+  churn_pct?: number | null;
+  source?: string | null;
+};
+
 const resultRows = [
   { key: "revenue", label: "Revenue" },
   { key: "gross_profit", label: "Gross Profit" },
@@ -235,7 +247,7 @@ export default function ModelingPage() {
   }, [kpis]);
 
   const sortedKpis = useMemo(() => {
-    const baseRows = quarters.length
+    const baseRows: KpiTableRow[] = quarters.length
       ? quarters
       : kpis.map((row) => ({ fiscal_year: row.fiscal_year, fiscal_period: row.fiscal_period }));
     const rows = baseRows
@@ -382,7 +394,7 @@ export default function ModelingPage() {
                     const parsed = raw === "" ? "" : Number(raw);
                     if (raw === "") {
                       setScenarioField(field.key, raw);
-                    } else if (!Number.isNaN(parsed)) {
+                    } else if (typeof parsed === "number" && !Number.isNaN(parsed)) {
                       setScenarioField(field.key, isPct ? parsed / 100 : parsed);
                     }
                   }}

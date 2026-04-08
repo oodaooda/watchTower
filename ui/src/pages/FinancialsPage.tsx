@@ -56,6 +56,14 @@ type Company = {
   description?: string | null;
 };
 
+type LineDef = {
+  key: keyof Row | string;
+  label: string;
+  strong?: boolean;
+  derived?: boolean;
+  fmt?: (v?: number | null) => string;
+};
+
 const API = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 const btn =
@@ -340,7 +348,7 @@ export default function FinancialsPage() {
     (row as any)?.[k] as number | null | undefined;
 
   const incomeLines = useMemo(() => {
-    const derivedBlock = [
+    const derivedBlock: LineDef[] = [
       {
         key: "gross_margin_calc",
         label: "Gross Margin",
@@ -421,18 +429,18 @@ export default function FinancialsPage() {
         { key: "revenue", label: "Revenue", strong: true },
         { key: "cost_of_revenue", label: "COGS" },
         ...derivedBlock,
-      ] as const;
+      ];
     }
 
     return [
       { key: "revenue", label: "Revenue" },
       { key: "cost_of_revenue", label: "Cost of Revenue" },
       ...derivedBlock.filter((ln) => ln.key !== "gross_margin_calc"), // gross margin calc already included but OK
-    ];
+    ] satisfies LineDef[];
   }, [mode]);
 
   const balanceLines = useMemo(() => {
-    const base = [
+    const base: LineDef[] = [
       { key: "assets_total", label: "Total Assets" },
       { key: "liabilities_current", label: "Current Liabilities" },
       { key: "liabilities_longterm", label: "Long-Term Liabilities" },
@@ -451,7 +459,7 @@ export default function FinancialsPage() {
           formatNum(v, { notation: "compact", maximumFractionDigits: 0 }),
       });
     }
-    return base as const;
+    return base;
   }, [mode]);
 
   const sections = useMemo(
@@ -473,7 +481,7 @@ export default function FinancialsPage() {
           { key: "dividends_paid", label: "Dividends Paid" },
           { key: "share_repurchases", label: "Share Repurchases" },
           { key: "fcf", label: "Free Cash Flow (FCF)" },
-        ] as const,
+        ] satisfies LineDef[],
       },
       {
         title: "Balance Sheet",

@@ -35,7 +35,8 @@ function defaultLookback(granularity: "hour" | "day" | "week" | "month" | "year"
 }
 
 export default function UsagePage() {
-  const [adminToken, setAdminToken] = useState("");
+  const [adminTokenInput, setAdminTokenInput] = useState("");
+  const [savedAdminToken, setSavedAdminToken] = useState("");
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [prices, setPrices] = useState<LLMModelPrice[]>([]);
   const [granularity, setGranularity] = useState<"hour" | "day" | "week" | "month" | "year">("day");
@@ -77,23 +78,36 @@ export default function UsagePage() {
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) || "";
     if (!stored) return;
-    setAdminToken(stored);
-    loadAll(stored);
+    const normalized = stored.trim();
+    setSavedAdminToken(normalized);
+    loadAll(normalized);
   }, []);
 
   useEffect(() => {
-    if (!adminToken) return;
+    if (!savedAdminToken) return;
     const refreshMs = 15000;
     if (!autoRefresh) return;
     const id = window.setInterval(() => {
-      void loadAll(adminToken);
+      void loadAll(savedAdminToken);
     }, refreshMs);
     return () => window.clearInterval(id);
-  }, [adminToken, autoRefresh, granularity, lookback, modelFilter]);
+  }, [savedAdminToken, autoRefresh, granularity, lookback, modelFilter]);
 
   const handleSaveToken = () => {
-    localStorage.setItem(STORAGE_KEY, adminToken);
-    if (adminToken) void loadAll(adminToken);
+    const trimmed = adminTokenInput.trim();
+    if (!trimmed) return;
+    localStorage.setItem(STORAGE_KEY, trimmed);
+    setSavedAdminToken(trimmed);
+    setAdminTokenInput("");
+    void loadAll(trimmed);
+  };
+
+  const handleClearToken = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setSavedAdminToken("");
+    setAdminTokenInput("");
+    setSummary(null);
+    setPrices([]);
   };
 
   const handleGranularityChange = (value: "hour" | "day" | "week" | "month" | "year") => {
@@ -115,11 +129,11 @@ export default function UsagePage() {
     cache_read_per_million: number;
     active: boolean;
   }) => {
-    if (!adminToken) return;
+    if (!savedAdminToken) return;
     try {
       setError(null);
-      await upsertUsagePrice(adminToken, payload);
-      const fresh = await fetchUsagePrices(adminToken);
+      await upsertUsagePrice(savedAdminToken, payload);
+      const fresh = await fetchUsagePrices(savedAdminToken);
       setPrices(fresh);
     } catch (err) {
       setError((err as Error).message || "Failed to save price");
@@ -158,15 +172,24 @@ export default function UsagePage() {
         <div className="text-sm font-semibold">Admin Token</div>
         <div className="flex gap-2">
           <input
-            value={adminToken}
-            onChange={(e) => setAdminToken(e.target.value)}
+            type="password"
+            value={adminTokenInput}
+            onChange={(e) => setAdminTokenInput(e.target.value)}
             placeholder="Paste admin token"
             className="flex-1 h-9 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
           />
           <button className={btn} onClick={handleSaveToken}>
             Save
           </button>
+          <button className={btnGhost} onClick={handleClearToken} disabled={!savedAdminToken}>
+            Clear
+          </button>
         </div>
+        {savedAdminToken ? (
+          <div className="text-xs text-zinc-500">
+            Admin token saved locally and hidden. Paste a new token only when rotating it.
+          </div>
+        ) : null}
         {error ? <div className="text-sm text-red-400">{error}</div> : null}
       </div>
 
@@ -209,8 +232,8 @@ export default function UsagePage() {
         </label>
         <button
           className={`${btnGhost} lg:col-span-1`}
-          onClick={() => adminToken && loadAll(adminToken)}
-          disabled={!adminToken || loading}
+          onClick={() => savedAdminToken && loadAll(savedAdminToken)}
+          disabled={!savedAdminToken || loading}
         >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
@@ -372,7 +395,7 @@ export default function UsagePage() {
                   active: newActive,
                 })
               }
-              disabled={!adminToken || !newModel.trim()}
+              disabled={!savedAdminToken || !newModel.trim()}
             >
               {editingId ? "Update" : "Save"}
             </button>

@@ -37,7 +37,7 @@ type CompanySummary = {
   description?: string | null;
 };
 
-type MetricMap = Record<string, number | null | undefined>;
+type MetricMap = Record<string, number | string | null | undefined>;
 
 type ProfileSeries = {
   price?: SeriesPoint[];
@@ -51,6 +51,9 @@ type ProfileSeries = {
 type RiskMetrics = {
   alpha?: number | null;
   alpha_annual?: number | null;
+  alpha_annual_1y?: number | null;
+  alpha_annual_6m?: number | null;
+  alpha_annual_3m?: number | null;
   beta?: number | null;
   benchmark?: string | null;
   risk_free_rate?: number | null;
@@ -83,6 +86,7 @@ type ValuationHistoryPoint = {
   pe?: number | null;
   revenue?: number | null;
   net_income?: number | null;
+  valuation_basis?: string | null;
 };
 
 type PriceHistoryRange = "1d" | "5d" | "1m" | "ytd" | "5y" | "max";
