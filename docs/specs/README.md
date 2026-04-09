@@ -7,6 +7,7 @@ Current specs reflect major shipped or in-flight surfaces:
 - `data-assistant.md`
 - `favorites-aware-qa.md`
 - `M001_earnings-call-transcripts.md`
+- `eod-price-history.md`
 - `multi-asset-portfolio.md`
 - `portfolio-lots-import.md`
 - `openclaw-api.md`

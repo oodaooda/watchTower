@@ -190,6 +190,23 @@ class PriceAnnual(Base):
     )
 
 
+class AssetPriceDaily(Base):
+    __tablename__ = "asset_price_daily"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    price_date = Column(Date, nullable=False, index=True)
+    close_price = Column(Numeric(20, 4), nullable=False)
+    source = Column(String, nullable=False, default="alpha_vantage", server_default="alpha_vantage")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "price_date", name="uq_asset_price_daily_company_date"),
+        Index("ix_asset_price_daily_company_date", "company_id", "price_date"),
+    )
+
+
 
 
 class MetricsAnnual(Base):

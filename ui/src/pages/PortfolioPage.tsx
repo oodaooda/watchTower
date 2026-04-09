@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import BackButton from "../components/BackButton";
+import PriceHistoryChart from "../components/PriceHistoryChart";
 import {
   createPortfolioPosition,
   deletePortfolioPosition,
@@ -582,70 +583,73 @@ export default function PortfolioPage() {
       </div>
 
       {selectedTicker ? (
-        <div className={`${card} p-4`}>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold">{selectedTicker} Lots</div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                Manage the individual lots that roll up into the grouped holding.
+        <div className="space-y-4">
+          <div className={`${card} p-4`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">{selectedTicker} Lots</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Manage the individual lots that roll up into the grouped holding.
+                </div>
               </div>
+              <button type="button" className={btnGhost} onClick={() => setSelectedTicker(null)}>
+                Close
+              </button>
             </div>
-            <button type="button" className={btnGhost} onClick={() => setSelectedTicker(null)}>
-              Close
-            </button>
-          </div>
-          <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
-            <table className="min-w-full text-sm">
-              <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-3 py-3">ID</th>
-                  <th className="px-3 py-3 text-right">Source</th>
-                  <th className="px-3 py-3 text-right">Quantity</th>
-                  <th className="px-3 py-3 text-right">Avg Cost</th>
-                  <th className="px-3 py-3 text-right">Cost Basis</th>
-                  <th className="px-3 py-3 text-right">Price</th>
-                  <th className="px-3 py-3 text-right">Market Value</th>
-                  <th className="px-3 py-3 text-right">Gain/Loss</th>
-                  <th className="px-3 py-3 text-right">Gain/Loss %</th>
-                  <th className="px-3 py-3 text-right">Price State</th>
-                  <th className="px-3 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedLots.map((position) => (
-                  <tr
-                    key={position.position_id}
-                    className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
-                  >
-                    <td className="px-3 py-3 text-zinc-500">{position.position_id}</td>
-                    <td className="px-3 py-3 text-right uppercase text-xs text-zinc-500">{position.entry_source}</td>
-                    <td className="px-3 py-3 text-right">{fmtNumber(position.quantity)}</td>
-                    <td className="px-3 py-3 text-right">{fmtCurrency(position.avg_cost_basis)}</td>
-                    <td className="px-3 py-3 text-right">{fmtCurrency(position.total_cost_basis)}</td>
-                    <td className="px-3 py-3 text-right">{fmtCurrency(position.current_price)}</td>
-                    <td className="px-3 py-3 text-right">{fmtCurrency(position.market_value)}</td>
-                    <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss && position.unrealized_gain_loss > 0 ? "text-emerald-500" : position.unrealized_gain_loss && position.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
-                      {fmtCurrency(position.unrealized_gain_loss)}
-                    </td>
-                    <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct > 0 ? "text-emerald-500" : position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct < 0 ? "text-red-500" : ""}`}>
-                      {fmtPercent(position.unrealized_gain_loss_pct)}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs text-zinc-500">{priceStatusLabel(position.price_status)}</td>
-                    <td className="px-3 py-3 text-right">
-                      <div className="flex justify-end gap-3">
-                        <button className="text-sm text-sky-600 hover:underline" onClick={() => handleEdit(position)}>
-                          Edit
-                        </button>
-                        <button className="text-sm text-red-500 hover:underline" onClick={() => void handleDelete(position.position_id)}>
-                          Remove
-                        </button>
-                      </div>
-                    </td>
+            <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
+              <table className="min-w-full text-sm">
+                <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-3">ID</th>
+                    <th className="px-3 py-3 text-right">Source</th>
+                    <th className="px-3 py-3 text-right">Quantity</th>
+                    <th className="px-3 py-3 text-right">Avg Cost</th>
+                    <th className="px-3 py-3 text-right">Cost Basis</th>
+                    <th className="px-3 py-3 text-right">Price</th>
+                    <th className="px-3 py-3 text-right">Market Value</th>
+                    <th className="px-3 py-3 text-right">Gain/Loss</th>
+                    <th className="px-3 py-3 text-right">Gain/Loss %</th>
+                    <th className="px-3 py-3 text-right">Price State</th>
+                    <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {selectedLots.map((position) => (
+                    <tr
+                      key={position.position_id}
+                      className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
+                    >
+                      <td className="px-3 py-3 text-zinc-500">{position.position_id}</td>
+                      <td className="px-3 py-3 text-right uppercase text-xs text-zinc-500">{position.entry_source}</td>
+                      <td className="px-3 py-3 text-right">{fmtNumber(position.quantity)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(position.avg_cost_basis)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(position.total_cost_basis)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(position.current_price)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(position.market_value)}</td>
+                      <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss && position.unrealized_gain_loss > 0 ? "text-emerald-500" : position.unrealized_gain_loss && position.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
+                        {fmtCurrency(position.unrealized_gain_loss)}
+                      </td>
+                      <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct > 0 ? "text-emerald-500" : position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct < 0 ? "text-red-500" : ""}`}>
+                        {fmtPercent(position.unrealized_gain_loss_pct)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-xs text-zinc-500">{priceStatusLabel(position.price_status)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex justify-end gap-3">
+                          <button className="text-sm text-sky-600 hover:underline" onClick={() => handleEdit(position)}>
+                            Edit
+                          </button>
+                          <button className="text-sm text-red-500 hover:underline" onClick={() => void handleDelete(position.position_id)}>
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
+          <PriceHistoryChart ticker={selectedTicker} />
         </div>
       ) : null}
     </div>

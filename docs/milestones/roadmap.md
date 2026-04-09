@@ -18,3 +18,7 @@ Detailed implementation tasks belong in milestone checklist files under `docs/mi
   - Spec: `../specs/portfolio-lots-import.md`
   - Checklist: `M003_portfolio-lots-import-checklist.md`
   - Current focus: allow duplicate ticker lots, grouped summaries, and replace-on-import onboarding
+- `M004` - EOD Price History (`planned`)
+  - Spec: `../specs/eod-price-history.md`
+  - Checklist: `M004_eod-price-history-checklist.md`
+  - Current focus: persist daily closes and surface EOD trend views without implying full portfolio performance

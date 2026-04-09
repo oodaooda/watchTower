@@ -10,30 +10,59 @@ import {
 } from "recharts";
 
 
-type RangeOption = "1d" | "5d" | "1m" | "ytd" | "5y" | "max";
+type RangeOption = "1d" | "5d" | "1m" | "3m" | "ytd" | "1y" | "5y" | "max";
+type EodRangeOption = Extract<RangeOption, "1m" | "3m" | "ytd" | "1y" | "max">;
 
-const RANGES: { value: RangeOption; label: string }[] = [
-  { value: "1d", label: "1D" },
-  { value: "5d", label: "5D" },
+const RANGES: { value: EodRangeOption; label: string }[] = [
   { value: "1m", label: "1M" },
+  { value: "3m", label: "3M" },
   { value: "ytd", label: "YTD" },
-  { value: "5y", label: "5Y" },
+  { value: "1y", label: "1Y" },
   { value: "max", label: "MAX" },
 ];
 
 type PricePoint = { ts: number; close: number };
+type ChangeSummary = {
+  start_date: string;
+  end_date: string;
+  change: number;
+  change_pct?: number | null;
+};
 
-export async function fetchPriceHistory(ticker: string, range: RangeOption): Promise<PricePoint[]> {
+type PriceHistoryPayload = {
+  points: PricePoint[];
+  summary: {
+    "1d"?: ChangeSummary | null;
+    "1m"?: ChangeSummary | null;
+    "1y"?: ChangeSummary | null;
+  };
+};
+
+function fmtCurrency(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+}
+
+function fmtPercent(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 2, signDisplay: "auto" }).format(value);
+}
+
+export async function fetchPriceHistory(ticker: string, range: RangeOption): Promise<PriceHistoryPayload> {
   const base = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
   const res = await fetch(`${base}/prices/${ticker}/history?range=${range}`);
   if (!res.ok) throw new Error(`price-history ${res.status}`);
   const json = await res.json();
-  return (json.points ?? []).map((p: any) => ({ ts: new Date(p.ts).getTime(), close: Number(p.close) }));
+  return {
+    points: (json.points ?? []).map((p: any) => ({ ts: new Date(p.ts).getTime(), close: Number(p.close) })),
+    summary: json.summary ?? {},
+  };
 }
 
 export default function PriceHistoryChart({ ticker }: { ticker: string }) {
-  const [range, setRange] = useState<RangeOption>("5y");
+  const [range, setRange] = useState<EodRangeOption>("1y");
   const [data, setData] = useState<PricePoint[]>([]);
+  const [summary, setSummary] = useState<PriceHistoryPayload["summary"]>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,8 +72,11 @@ export default function PriceHistoryChart({ ticker }: { ticker: string }) {
       setLoading(true);
       setError(null);
       try {
-        const points = await fetchPriceHistory(ticker, range);
-        if (!cancelled) setData(points);
+        const payload = await fetchPriceHistory(ticker, range);
+        if (!cancelled) {
+          setData(payload.points);
+          setSummary(payload.summary);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -57,10 +89,19 @@ export default function PriceHistoryChart({ ticker }: { ticker: string }) {
     };
   }, [ticker, range]);
 
+  const summaryCards = useMemo(
+    () => [
+      { label: "1D", value: fmtCurrency(summary["1d"]?.change), pct: fmtPercent(summary["1d"]?.change_pct) },
+      { label: "1M", value: fmtCurrency(summary["1m"]?.change), pct: fmtPercent(summary["1m"]?.change_pct) },
+      { label: "1Y", value: fmtCurrency(summary["1y"]?.change), pct: fmtPercent(summary["1y"]?.change_pct) },
+    ],
+    [summary],
+  );
+
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Price History</h2>
+        <h2 className="text-lg font-semibold">EOD Price History</h2>
         <div className="flex gap-1">
           {RANGES.map((opt) => (
             <button
@@ -72,6 +113,15 @@ export default function PriceHistoryChart({ ticker }: { ticker: string }) {
             </button>
           ))}
         </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {summaryCards.map((card) => (
+          <div key={card.label} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3">
+            <div className="text-xs uppercase tracking-wide text-zinc-500">{card.label} Change</div>
+            <div className="mt-1 text-lg font-semibold">{card.value}</div>
+            <div className="text-sm text-zinc-500">{card.pct}</div>
+          </div>
+        ))}
       </div>
       {loading ? (
         <div className="text-sm text-zinc-500">Loading price data…</div>

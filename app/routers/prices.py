@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.models import Company
+from app.services.price_history import ensure_daily_history
 
 router = APIRouter(prefix="/prices", tags=["prices"])
 
@@ -30,8 +31,8 @@ DAILY_TTL = 60 * 60 * 3     # 3 hours
 NEWS_TTL = 60 * 10          # 10 minutes
 
 PriceRange = Query(
-    "5y",
-    pattern="^(1d|5d|1m|ytd|5y|max)$",
+    "1y",
+    pattern="^(1d|5d|1m|3m|ytd|1y|5y|max)$",
     description="Requested price history window",
 )
 
@@ -46,18 +47,28 @@ def price_history(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
-    key = settings.alpha_vantage_api_key
-    if not key:
-        raise HTTPException(status_code=503, detail="Alpha Vantage API key not configured")
-
     symbol = company.ticker.upper()
 
     if range == "1d":
+        key = settings.alpha_vantage_api_key
+        if not key:
+            raise HTTPException(status_code=503, detail="Alpha Vantage API key not configured")
         points = _get_intraday(symbol, key, interval="5min")
         sliced = _slice_intraday(points)
+        summary = {"1d": None, "1m": None, "1y": None}
+        interval = "5min"
+        source = "alpha_vantage"
     else:
-        points = _get_daily(symbol, key)
+        rows = ensure_daily_history(db, company)
+        if not rows:
+            if not settings.alpha_vantage_api_key:
+                raise HTTPException(status_code=503, detail="Alpha Vantage API key not configured")
+            raise HTTPException(status_code=502, detail="Daily price history unavailable")
+        points = [(datetime.combine(row.price_date, datetime.min.time()), float(row.close_price)) for row in rows]
         sliced = _slice_daily(points, range)
+        summary = _build_change_summary(points)
+        interval = "1d"
+        source = rows[-1].source if rows else "alpha_vantage"
 
     payload = [
         {"ts": dt.isoformat(), "close": close}
@@ -67,8 +78,9 @@ def price_history(
     return {
         "ticker": symbol,
         "range": range,
-        "interval": "5min" if range == "1d" else "1d",
-        "source": "alpha_vantage",
+        "interval": interval,
+        "source": source,
+        "summary": summary,
         "points": payload,
     }
 
@@ -227,8 +239,14 @@ def _slice_daily(points: List[Tuple[datetime, float]], range_name: str) -> List[
     elif range_name == "1m":
         cutoff = latest_dt - timedelta(days=32)
         subset = [p for p in points if p[0] >= cutoff]
+    elif range_name == "3m":
+        cutoff = latest_dt - timedelta(days=95)
+        subset = [p for p in points if p[0] >= cutoff]
     elif range_name == "ytd":
         cutoff = datetime(latest_dt.year, 1, 1)
+        subset = [p for p in points if p[0] >= cutoff]
+    elif range_name == "1y":
+        cutoff = latest_dt - timedelta(days=366)
         subset = [p for p in points if p[0] >= cutoff]
     elif range_name == "5y":
         cutoff = latest_dt - timedelta(days=5 * 366)
@@ -239,6 +257,38 @@ def _slice_daily(points: List[Tuple[datetime, float]], range_name: str) -> List[
         subset = points[-250:]
 
     return _downsample(subset, limit=1200)
+
+
+def _period_change(points: List[Tuple[datetime, float]], start_cutoff: datetime) -> Optional[Dict[str, Any]]:
+    if len(points) < 2:
+        return None
+    latest_dt, latest_close = points[-1]
+    baseline = next((point for point in points if point[0] >= start_cutoff), points[0])
+    baseline_dt, baseline_close = baseline
+    change = latest_close - baseline_close
+    change_pct = (change / baseline_close) if baseline_close else None
+    return {
+        "start_date": baseline_dt.date().isoformat(),
+        "end_date": latest_dt.date().isoformat(),
+        "change": change,
+        "change_pct": change_pct,
+    }
+
+
+def _build_change_summary(points: List[Tuple[datetime, float]]) -> Dict[str, Optional[Dict[str, Any]]]:
+    if len(points) < 2:
+        return {"1d": None, "1m": None, "1y": None}
+
+    latest_dt = points[-1][0]
+    one_day = {
+        "start_date": points[-2][0].date().isoformat(),
+        "end_date": latest_dt.date().isoformat(),
+        "change": points[-1][1] - points[-2][1],
+        "change_pct": ((points[-1][1] - points[-2][1]) / points[-2][1]) if points[-2][1] else None,
+    }
+    one_month = _period_change(points, latest_dt - timedelta(days=32))
+    one_year = _period_change(points, latest_dt - timedelta(days=366))
+    return {"1d": one_day, "1m": one_month, "1y": one_year}
 
 
 def _downsample(points: List[Tuple[datetime, float]], limit: int) -> List[Tuple[datetime, float]]:

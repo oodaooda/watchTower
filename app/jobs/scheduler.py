@@ -30,6 +30,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, HTTPException
 
+from app.core.db import SessionLocal
+from app.services.price_history import sync_tracked_assets_daily_history
+
 log = logging.getLogger(__name__)
 
 # ----------------------------
@@ -70,8 +73,12 @@ def nightly_fundamentals_job() -> None:
 def daily_prices_job() -> None:
     """Placeholder: fetch daily adjusted prices and roll up to fiscal years."""
     log.info("[jobs] daily_prices_job start")
-    # TODO: fetch prices for tracked tickers; roll to FY; upsert `prices_annual`
-    log.info("[jobs] daily_prices_job done")
+    db = SessionLocal()
+    try:
+        synced = sync_tracked_assets_daily_history(db)
+        log.info("[jobs] daily_prices_job done synced_assets=%s", synced)
+    finally:
+        db.close()
 
 
 # -----------------------------
