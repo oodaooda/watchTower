@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import BackButton from "../components/BackButton";
 import {
   createPortfolioPosition,
@@ -43,6 +43,13 @@ function priceStatusLabel(status?: string | null) {
   if (status === "live") return "Live";
   if (status === "cached") return "Cached";
   return "Unavailable";
+}
+
+function assetTypeLabel(value?: string | null) {
+  const normalized = (value || "equity").toLowerCase();
+  if (normalized === "etf") return "ETF";
+  if (normalized === "option") return "Option";
+  return "Equity";
 }
 
 type ParsedImportRow = {
@@ -282,6 +289,55 @@ export default function PortfolioPage() {
     () => positions.filter((position) => position.ticker === selectedTicker),
     [positions, selectedTicker],
   );
+  const groupsByAssetType = useMemo(() => {
+    const order = ["equity", "etf", "option"];
+    const buckets = new Map<
+      string,
+      {
+        assetType: string;
+        label: string;
+        groups: PortfolioTickerGroup[];
+        totalCostBasis: number;
+        totalMarketValue: number | null;
+        totalGainLoss: number | null;
+        totalWeight: number | null;
+      }
+    >();
+
+    for (const group of groups) {
+      const assetType = (group.asset_type || "equity").toLowerCase();
+      const existing = buckets.get(assetType) ?? {
+        assetType,
+        label: assetTypeLabel(assetType),
+        groups: [],
+        totalCostBasis: 0,
+        totalMarketValue: 0,
+        totalGainLoss: 0,
+        totalWeight: 0,
+      };
+      existing.groups.push(group);
+      existing.totalCostBasis += group.total_cost_basis || 0;
+      existing.totalMarketValue =
+        existing.totalMarketValue === null || group.market_value === null
+          ? null
+          : existing.totalMarketValue + (group.market_value || 0);
+      existing.totalGainLoss =
+        existing.totalGainLoss === null || group.unrealized_gain_loss === null
+          ? null
+          : existing.totalGainLoss + (group.unrealized_gain_loss || 0);
+      existing.totalWeight =
+        existing.totalWeight === null || group.portfolio_weight === null
+          ? null
+          : existing.totalWeight + (group.portfolio_weight || 0);
+      buckets.set(assetType, existing);
+    }
+
+    return Array.from(buckets.values()).sort((a, b) => {
+      const aIndex = order.indexOf(a.assetType);
+      const bIndex = order.indexOf(b.assetType);
+      return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex);
+    });
+  }, [groups]);
 
   const cards = useMemo(
     () => [
@@ -477,26 +533,48 @@ export default function PortfolioPage() {
                 </td>
               </tr>
             ) : (
-              groups.map((group: PortfolioTickerGroup) => (
-                <tr key={group.ticker} className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40">
-                  <td className="px-3 py-3 font-semibold">{group.ticker}</td>
-                  <td className="px-3 py-3">{group.name || "—"}</td>
-                  <td className="px-3 py-3 text-right">{group.lot_count}</td>
-                  <td className="px-3 py-3 text-right">{fmtNumber(group.total_quantity)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(group.weighted_avg_cost_basis)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(group.total_cost_basis)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(group.current_price)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(group.market_value)}</td>
-                  <td className={`px-3 py-3 text-right ${group.unrealized_gain_loss && group.unrealized_gain_loss > 0 ? "text-emerald-500" : group.unrealized_gain_loss && group.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
-                    {fmtCurrency(group.unrealized_gain_loss)}
-                  </td>
-                  <td className="px-3 py-3 text-right">{fmtPercent(group.portfolio_weight)}</td>
-                  <td className="px-3 py-3 text-right">
-                    <button className="text-sm text-sky-600 hover:underline" onClick={() => setSelectedTicker(group.ticker)}>
-                      {selectedTicker === group.ticker ? "Viewing Lots" : group.lot_count > 1 ? "View Lots" : "Manage"}
-                    </button>
-                  </td>
-                </tr>
+              groupsByAssetType.map((section) => (
+                <Fragment key={section.assetType}>
+                  <tr className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-100/70 dark:bg-zinc-900/80">
+                    <td className="px-3 py-3 font-semibold" colSpan={2}>
+                      {section.label} Subtotal
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold">
+                      {section.groups.reduce((sum, group) => sum + group.lot_count, 0)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold">{fmtNumber(section.groups.reduce((sum, group) => sum + group.total_quantity, 0))}</td>
+                    <td className="px-3 py-3 text-right">—</td>
+                    <td className="px-3 py-3 text-right font-semibold">{fmtCurrency(section.totalCostBasis)}</td>
+                    <td className="px-3 py-3 text-right">—</td>
+                    <td className="px-3 py-3 text-right font-semibold">{fmtCurrency(section.totalMarketValue)}</td>
+                    <td className={`px-3 py-3 text-right font-semibold ${section.totalGainLoss && section.totalGainLoss > 0 ? "text-emerald-500" : section.totalGainLoss && section.totalGainLoss < 0 ? "text-red-500" : ""}`}>
+                      {fmtCurrency(section.totalGainLoss)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold">{fmtPercent(section.totalWeight)}</td>
+                    <td className="px-3 py-3 text-right">—</td>
+                  </tr>
+                  {section.groups.map((group: PortfolioTickerGroup) => (
+                    <tr key={`${section.assetType}-${group.ticker}`} className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40">
+                      <td className="px-3 py-3 font-semibold">{group.ticker}</td>
+                      <td className="px-3 py-3">{group.name || "—"}</td>
+                      <td className="px-3 py-3 text-right">{group.lot_count}</td>
+                      <td className="px-3 py-3 text-right">{fmtNumber(group.total_quantity)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(group.weighted_avg_cost_basis)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(group.total_cost_basis)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(group.current_price)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(group.market_value)}</td>
+                      <td className={`px-3 py-3 text-right ${group.unrealized_gain_loss && group.unrealized_gain_loss > 0 ? "text-emerald-500" : group.unrealized_gain_loss && group.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
+                        {fmtCurrency(group.unrealized_gain_loss)}
+                      </td>
+                      <td className="px-3 py-3 text-right">{fmtPercent(group.portfolio_weight)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <button className="text-sm text-sky-600 hover:underline" onClick={() => setSelectedTicker(group.ticker)}>
+                          {selectedTicker === group.ticker ? "Viewing Lots" : group.lot_count > 1 ? "View Lots" : "Manage"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))
             )}
           </tbody>
