@@ -14,3 +14,7 @@ Detailed implementation tasks belong in milestone checklist files under `docs/mi
   - Spec: `../specs/multi-asset-portfolio.md`
   - Checklist: `M002_multi-asset-portfolio-checklist.md`
   - Current focus: expand watchlist support to ETFs, then add position-level portfolio tracking and portfolio-aware QA
+- `M003` - Portfolio Lots and Bulk Import (`planned`)
+  - Spec: `../specs/portfolio-lots-import.md`
+  - Checklist: `M003_portfolio-lots-import-checklist.md`
+  - Current focus: allow duplicate ticker lots, grouped summaries, and replace-on-import onboarding

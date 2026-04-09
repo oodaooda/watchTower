@@ -8,6 +8,7 @@ Current specs reflect major shipped or in-flight surfaces:
 - `favorites-aware-qa.md`
 - `M001_earnings-call-transcripts.md`
 - `multi-asset-portfolio.md`
+- `portfolio-lots-import.md`
 - `openclaw-api.md`
 - `usage-observability.md`
 
