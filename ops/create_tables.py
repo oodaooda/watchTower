@@ -27,12 +27,70 @@ def _ensure_non_destructive_columns(conn) -> None:
     inspector = inspect(conn)
     tables = set(inspector.get_table_names())
     if "companies" not in tables:
-        return
+        company_columns = set()
+    else:
+        company_columns = {column["name"] for column in inspector.get_columns("companies")}
 
-    company_columns = {column["name"] for column in inspector.get_columns("companies")}
     if "asset_type" not in company_columns:
         conn.execute(text("ALTER TABLE companies ADD COLUMN asset_type VARCHAR DEFAULT 'equity'"))
         conn.execute(text("UPDATE companies SET asset_type = 'equity' WHERE asset_type IS NULL"))
+
+    if "portfolio_positions" not in tables:
+        return
+
+    portfolio_columns = {column["name"] for column in inspector.get_columns("portfolio_positions")}
+    if "entry_source" not in portfolio_columns:
+        conn.execute(text("ALTER TABLE portfolio_positions ADD COLUMN entry_source VARCHAR DEFAULT 'manual'"))
+        conn.execute(text("UPDATE portfolio_positions SET entry_source = 'manual' WHERE entry_source IS NULL"))
+
+    portfolio_uniques = inspector.get_unique_constraints("portfolio_positions")
+    company_unique_names = [
+        constraint.get("name")
+        for constraint in portfolio_uniques
+        if constraint.get("column_names") == ["company_id"]
+    ]
+
+    if not company_unique_names:
+        return
+
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        conn.execute(
+            text(
+                """
+                CREATE TABLE portfolio_positions__new (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    company_id INTEGER NOT NULL,
+                    quantity NUMERIC(20, 6) NOT NULL,
+                    avg_cost_basis NUMERIC(20, 6) NOT NULL,
+                    entry_source VARCHAR DEFAULT 'manual' NOT NULL,
+                    notes VARCHAR,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    FOREIGN KEY(company_id) REFERENCES companies (id) ON DELETE CASCADE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO portfolio_positions__new
+                    (id, company_id, quantity, avg_cost_basis, entry_source, notes, created_at, updated_at)
+                SELECT id, company_id, quantity, avg_cost_basis, COALESCE(entry_source, 'manual'), notes, created_at, updated_at
+                FROM portfolio_positions
+                """
+            )
+        )
+        conn.execute(text("DROP TABLE portfolio_positions"))
+        conn.execute(text("ALTER TABLE portfolio_positions__new RENAME TO portfolio_positions"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_portfolio_positions_company_id ON portfolio_positions (company_id)"))
+        return
+
+    for constraint_name in company_unique_names:
+        if constraint_name:
+            conn.execute(text(f'ALTER TABLE portfolio_positions DROP CONSTRAINT IF EXISTS "{constraint_name}"'))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_portfolio_positions_company_id ON portfolio_positions (company_id)"))
 
 
 def main() -> None:

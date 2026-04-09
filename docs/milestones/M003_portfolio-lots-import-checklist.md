@@ -18,22 +18,22 @@ This checklist covers duplicate-ticker portfolio support, grouped summaries, and
 
 ## Phase 2 — Backend Schema and Portfolio API
 
-- [ ] Remove the unique-per-company restriction from portfolio positions.
-- [ ] Update portfolio CRUD to use `position_id`.
-- [ ] Add grouped ticker summaries to the portfolio response.
-- [ ] Add explicit `entry_source` metadata.
-- [ ] Add replace-capable bulk import endpoint.
-- [ ] Add schema-upgrade path for existing databases.
+- [x] Remove the unique-per-company restriction from portfolio positions.
+- [x] Update portfolio CRUD to use `position_id`.
+- [x] Add grouped ticker summaries to the portfolio response.
+- [x] Add explicit `entry_source` metadata.
+- [x] Add replace-capable bulk import endpoint.
+- [x] Add schema-upgrade path for existing databases.
 
 **Phase 2 Tests**
-- [ ] Unit: duplicate rows for the same ticker can coexist.
-- [ ] Unit: grouped ticker summaries aggregate duplicate lots correctly.
-- [ ] Integration: update/delete by `position_id` only affects one lot.
-- [ ] Integration: replace import swaps the saved portfolio cleanly.
+- [x] Unit: duplicate rows for the same ticker can coexist.
+- [x] Unit: grouped ticker summaries aggregate duplicate lots correctly.
+- [x] Integration: update/delete by `position_id` only affects one lot.
+- [x] Integration: replace import swaps the saved portfolio cleanly.
 
 **Commit / Push Gate**
-- [ ] Commit after backend tests pass.
-- [ ] Push after API verification succeeds.
+- [x] Commit after backend tests pass.
+- [x] Push after API verification succeeds.
 
 ## Phase 3 — Portfolio UI Import and Editing
 

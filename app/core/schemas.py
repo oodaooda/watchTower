@@ -216,6 +216,7 @@ class PortfolioPositionIn(BaseModel):
     quantity: float
     avg_cost_basis: float
     notes: Optional[str] = None
+    entry_source: Optional[str] = "manual"
 
 
 class PortfolioPositionUpdate(BaseModel):
@@ -241,7 +242,27 @@ class PortfolioPositionItem(BaseModel):
     portfolio_weight: Optional[float] = None
     price_status: str = "unavailable"
     price_source: Optional[str] = None
+    entry_source: str = "manual"
     notes: Optional[str] = None
+
+
+class PortfolioTickerGroupItem(BaseModel):
+    ticker: str
+    company_id: int
+    asset_type: str = "equity"
+    name: Optional[str] = None
+    industry: Optional[str] = None
+    lot_count: int
+    total_quantity: float
+    weighted_avg_cost_basis: float
+    total_cost_basis: float
+    current_price: Optional[float] = None
+    market_value: Optional[float] = None
+    unrealized_gain_loss: Optional[float] = None
+    unrealized_gain_loss_pct: Optional[float] = None
+    portfolio_weight: Optional[float] = None
+    price_status: str = "unavailable"
+    price_source: Optional[str] = None
 
 
 class PortfolioSummary(BaseModel):
@@ -252,11 +273,26 @@ class PortfolioSummary(BaseModel):
     has_unpriced_positions: bool = False
     priced_positions: int = 0
     unpriced_positions: int = 0
+    total_positions: int = 0
+    grouped_assets: int = 0
 
 
 class PortfolioOverview(BaseModel):
     summary: PortfolioSummary
     positions: List[PortfolioPositionItem] = Field(default_factory=list)
+    groups: List[PortfolioTickerGroupItem] = Field(default_factory=list)
+
+
+class PortfolioImportRowIn(BaseModel):
+    ticker: str
+    quantity: float
+    avg_cost_basis: float
+    notes: Optional[str] = None
+
+
+class PortfolioImportRequest(BaseModel):
+    positions: List[PortfolioImportRowIn] = Field(default_factory=list)
+    replace_existing: bool = False
 
 
 # ---------- Modeling ----------

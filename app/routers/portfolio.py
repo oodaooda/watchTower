@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import List
+from collections import defaultdict
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -9,9 +10,11 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.models import Company, PortfolioPosition
 from app.core.schemas import (
+    PortfolioImportRequest,
     PortfolioOverview,
     PortfolioPositionIn,
     PortfolioPositionItem,
+    PortfolioTickerGroupItem,
     PortfolioPositionUpdate,
     PortfolioSummary,
 )
@@ -26,6 +29,54 @@ def _validate_position_fields(quantity: float | None, avg_cost_basis: float | No
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
     if avg_cost_basis is not None and avg_cost_basis < 0:
         raise HTTPException(status_code=400, detail="Average cost basis must be zero or greater")
+
+
+def _normalize_entry_source(value: str | None) -> str:
+    normalized = (value or "manual").strip().lower()
+    if normalized not in {"manual", "import"}:
+        return "manual"
+    return normalized
+
+
+def _group_portfolio_items(items: List[PortfolioPositionItem]) -> List[PortfolioTickerGroupItem]:
+    grouped: Dict[tuple[int, str], List[PortfolioPositionItem]] = defaultdict(list)
+    for item in items:
+        grouped[(item.company_id, item.ticker)].append(item)
+
+    groups: List[PortfolioTickerGroupItem] = []
+    for (_company_id, _ticker), bucket in sorted(grouped.items(), key=lambda entry: entry[0][1]):
+        first = bucket[0]
+        total_quantity = sum(item.quantity for item in bucket)
+        total_cost_basis = sum(item.total_cost_basis for item in bucket)
+        weighted_avg_cost_basis = (total_cost_basis / total_quantity) if total_quantity > 0 else 0.0
+        market_values = [item.market_value for item in bucket]
+        market_value = None if any(value is None for value in market_values) else sum(value or 0.0 for value in market_values)
+        gain = None if market_value is None else market_value - total_cost_basis
+        gain_pct = (gain / total_cost_basis) if (gain is not None and total_cost_basis > 0) else None
+        price_status = "unavailable" if any(item.price_status == "unavailable" for item in bucket) else bucket[0].price_status
+        price_source = bucket[0].price_source
+        current_price = None if any(item.current_price is None for item in bucket) else bucket[0].current_price
+        groups.append(
+            PortfolioTickerGroupItem(
+                ticker=first.ticker,
+                company_id=first.company_id,
+                asset_type=first.asset_type,
+                name=first.name,
+                industry=first.industry,
+                lot_count=len(bucket),
+                total_quantity=total_quantity,
+                weighted_avg_cost_basis=weighted_avg_cost_basis,
+                total_cost_basis=total_cost_basis,
+                current_price=current_price,
+                market_value=market_value,
+                unrealized_gain_loss=gain,
+                unrealized_gain_loss_pct=gain_pct,
+                portfolio_weight=None,
+                price_status=price_status,
+                price_source=price_source,
+            )
+        )
+    return groups
 
 
 def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPosition]) -> PortfolioOverview:
@@ -65,10 +116,12 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
                 portfolio_weight=None,
                 price_status=str(quote.get("status") or "unavailable"),
                 price_source=quote.get("source"),
+                entry_source=_normalize_entry_source(getattr(position, "entry_source", None)),
                 notes=position.notes,
             )
         )
 
+    groups = _group_portfolio_items(items)
     total_cost_basis = sum(item.total_cost_basis for item in items)
     total_market_value = None if has_unpriced_positions else sum(item.market_value or 0.0 for item in items)
     total_gain = None if total_market_value is None else total_market_value - total_cost_basis
@@ -80,6 +133,9 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
         for item in items:
             if item.market_value is not None:
                 item.portfolio_weight = item.market_value / total_market_value
+        for group in groups:
+            if group.market_value is not None:
+                group.portfolio_weight = group.market_value / total_market_value
 
     return PortfolioOverview(
         summary=PortfolioSummary(
@@ -90,8 +146,11 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
             has_unpriced_positions=has_unpriced_positions,
             priced_positions=sum(1 for item in items if item.market_value is not None),
             unpriced_positions=sum(1 for item in items if item.market_value is None),
+            total_positions=len(items),
+            grouped_assets=len(groups),
         ),
         positions=items,
+        groups=groups,
     )
 
 
@@ -99,7 +158,7 @@ def _load_positions(db: Session) -> List[PortfolioPosition]:
     return db.scalars(
         select(PortfolioPosition)
         .join(PortfolioPosition.company)
-        .order_by(Company.ticker.asc())
+        .order_by(Company.ticker.asc(), PortfolioPosition.created_at.asc(), PortfolioPosition.id.asc())
     ).all()
 
 
@@ -119,34 +178,23 @@ def add_portfolio_position(payload: PortfolioPositionIn, db: Session = Depends(g
     if not asset:
         raise HTTPException(status_code=404, detail="Tracked asset not found")
 
-    existing = db.execute(
-        select(PortfolioPosition).where(PortfolioPosition.company_id == asset.id)
-    ).scalar_one_or_none()
-    if existing:
-        existing.quantity = payload.quantity
-        existing.avg_cost_basis = payload.avg_cost_basis
-        existing.notes = payload.notes
-    else:
-        db.add(
-            PortfolioPosition(
-                company_id=asset.id,
-                quantity=payload.quantity,
-                avg_cost_basis=payload.avg_cost_basis,
-                notes=payload.notes,
-            )
+    db.add(
+        PortfolioPosition(
+            company_id=asset.id,
+            quantity=payload.quantity,
+            avg_cost_basis=payload.avg_cost_basis,
+            entry_source=_normalize_entry_source(payload.entry_source),
+            notes=payload.notes,
         )
+    )
     db.commit()
     return _serialize_portfolio_positions(db, _load_positions(db))
 
 
-@router.put("/{ticker}", response_model=PortfolioOverview)
-def update_portfolio_position(ticker: str, payload: PortfolioPositionUpdate, db: Session = Depends(get_db)):
-    asset = resolve_asset(db, ticker)
-    if not asset:
-        raise HTTPException(status_code=404, detail="Tracked asset not found")
-
+@router.put("/{position_id}", response_model=PortfolioOverview)
+def update_portfolio_position(position_id: int, payload: PortfolioPositionUpdate, db: Session = Depends(get_db)):
     position = db.execute(
-        select(PortfolioPosition).where(PortfolioPosition.company_id == asset.id)
+        select(PortfolioPosition).where(PortfolioPosition.id == position_id)
     ).scalar_one_or_none()
     if not position:
         raise HTTPException(status_code=404, detail="Portfolio position not found")
@@ -162,18 +210,66 @@ def update_portfolio_position(ticker: str, payload: PortfolioPositionUpdate, db:
     return _serialize_portfolio_positions(db, _load_positions(db))
 
 
-@router.delete("/{ticker}", response_model=PortfolioOverview)
-def delete_portfolio_position(ticker: str, db: Session = Depends(get_db)):
-    asset = resolve_asset(db, ticker)
-    if not asset:
-        raise HTTPException(status_code=404, detail="Tracked asset not found")
-
+@router.delete("/{position_id}", response_model=PortfolioOverview)
+def delete_portfolio_position(position_id: int, db: Session = Depends(get_db)):
     position = db.execute(
-        select(PortfolioPosition).where(PortfolioPosition.company_id == asset.id)
+        select(PortfolioPosition).where(PortfolioPosition.id == position_id)
     ).scalar_one_or_none()
     if not position:
         raise HTTPException(status_code=404, detail="Portfolio position not found")
 
     db.delete(position)
+    db.commit()
+    return _serialize_portfolio_positions(db, _load_positions(db))
+
+
+@router.post("/import", response_model=PortfolioOverview)
+def import_portfolio_positions(payload: PortfolioImportRequest, db: Session = Depends(get_db)):
+    rows = payload.positions or []
+    if not rows:
+        raise HTTPException(status_code=400, detail="At least one portfolio row is required")
+
+    resolved_rows = []
+    errors = []
+    for idx, row in enumerate(rows, start=1):
+        ticker = normalize_symbol(row.ticker)
+        try:
+            _validate_position_fields(row.quantity, row.avg_cost_basis)
+        except HTTPException as exc:
+            errors.append({"row": idx, "ticker": ticker or row.ticker, "error": exc.detail})
+            continue
+        if not ticker:
+            errors.append({"row": idx, "ticker": row.ticker, "error": "Ticker is required"})
+            continue
+        asset = find_or_create_asset(db, ticker, track_reason="portfolio_asset")
+        if not asset:
+            errors.append({"row": idx, "ticker": ticker, "error": "Tracked asset not found"})
+            continue
+        resolved_rows.append(
+            {
+                "company_id": asset.id,
+                "quantity": row.quantity,
+                "avg_cost_basis": row.avg_cost_basis,
+                "notes": row.notes,
+            }
+        )
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"message": "Portfolio import validation failed", "errors": errors})
+
+    if payload.replace_existing:
+        db.query(PortfolioPosition).delete()
+        db.flush()
+
+    for row in resolved_rows:
+        db.add(
+            PortfolioPosition(
+                company_id=row["company_id"],
+                quantity=row["quantity"],
+                avg_cost_basis=row["avg_cost_basis"],
+                entry_source="import",
+                notes=row["notes"],
+            )
+        )
     db.commit()
     return _serialize_portfolio_positions(db, _load_positions(db))
