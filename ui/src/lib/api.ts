@@ -383,7 +383,27 @@ export type PortfolioPosition = {
   portfolio_weight?: number | null;
   price_status: string;
   price_source?: string | null;
+  entry_source: string;
   notes?: string | null;
+};
+
+export type PortfolioTickerGroup = {
+  ticker: string;
+  company_id: number;
+  asset_type: string;
+  name?: string | null;
+  industry?: string | null;
+  lot_count: number;
+  total_quantity: number;
+  weighted_avg_cost_basis: number;
+  total_cost_basis: number;
+  current_price?: number | null;
+  market_value?: number | null;
+  unrealized_gain_loss?: number | null;
+  unrealized_gain_loss_pct?: number | null;
+  portfolio_weight?: number | null;
+  price_status: string;
+  price_source?: string | null;
 };
 
 export type PortfolioSummaryOut = {
@@ -394,14 +414,25 @@ export type PortfolioSummaryOut = {
   has_unpriced_positions: boolean;
   priced_positions: number;
   unpriced_positions: number;
+  total_positions: number;
+  grouped_assets: number;
 };
 
 export type PortfolioOverviewOut = {
   summary: PortfolioSummaryOut;
   positions: PortfolioPosition[];
+  groups: PortfolioTickerGroup[];
 };
 
 export type PortfolioPositionIn = {
+  ticker: string;
+  quantity: number;
+  avg_cost_basis: number;
+  notes?: string | null;
+  entry_source?: string | null;
+};
+
+export type PortfolioImportRowIn = {
   ticker: string;
   quantity: number;
   avg_cost_basis: number;
@@ -425,10 +456,10 @@ export async function createPortfolioPosition(payload: PortfolioPositionIn): Pro
 }
 
 export async function updatePortfolioPosition(
-  ticker: string,
+  positionId: number,
   payload: Partial<Omit<PortfolioPositionIn, "ticker">>,
 ): Promise<PortfolioOverviewOut> {
-  const res = await fetch(`${API_BASE}/portfolio/${encodeURIComponent(ticker)}`, {
+  const res = await fetch(`${API_BASE}/portfolio/${positionId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -437,11 +468,24 @@ export async function updatePortfolioPosition(
   return res.json();
 }
 
-export async function deletePortfolioPosition(ticker: string): Promise<PortfolioOverviewOut> {
-  const res = await fetch(`${API_BASE}/portfolio/${encodeURIComponent(ticker)}`, {
+export async function deletePortfolioPosition(positionId: number): Promise<PortfolioOverviewOut> {
+  const res = await fetch(`${API_BASE}/portfolio/${positionId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`portfolio/delete ${res.status}`);
+  return res.json();
+}
+
+export async function importPortfolioPositions(
+  positions: PortfolioImportRowIn[],
+  replaceExisting = true,
+): Promise<PortfolioOverviewOut> {
+  const res = await fetch(`${API_BASE}/portfolio/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ positions, replace_existing: replaceExisting }),
+  });
+  if (!res.ok) throw new Error(`portfolio/import ${res.status}`);
   return res.json();
 }
 

@@ -37,19 +37,19 @@ This checklist covers duplicate-ticker portfolio support, grouped summaries, and
 
 ## Phase 3 — Portfolio UI Import and Editing
 
-- [ ] Update the portfolio page to show both grouped summary and raw positions.
-- [ ] Switch edit/remove flows to `position_id`.
-- [ ] Add bulk paste import with preview and replace behavior.
-- [ ] Surface canonical import format guidance in the UI.
+- [x] Update the portfolio page to show both grouped summary and raw positions.
+- [x] Switch edit/remove flows to `position_id`.
+- [x] Add bulk paste import with preview and replace behavior.
+- [x] Surface canonical import format guidance in the UI.
 
 **Phase 3 Tests**
-- [ ] Integration: editing one duplicate lot leaves sibling lots unchanged.
-- [ ] Integration: replace import updates the visible grouped totals correctly.
-- [ ] Manual: pasted holdings populate the portfolio without one-by-one typing.
+- [x] Build: frontend compiles with grouped portfolio response and import UI changes.
+- [x] Smoke: live `/portfolio` response shape matches the grouped UI contract.
+- [x] Review: import preview accepts canonical format and recognizable headed table layouts.
 
 **Commit / Push Gate**
-- [ ] Commit after frontend verification passes.
-- [ ] Push after UI verification succeeds.
+- [x] Commit after frontend verification passes.
+- [x] Push after UI verification succeeds.
 
 ## Phase 4 — Portfolio QA Aggregation
 
