@@ -35,6 +35,9 @@ Extend the portfolio feature from one-position-per-symbol into a lot-capable mod
 - CRUD operations must target `position_id`.
 - The API must return both raw position rows and grouped ticker summaries.
 - QA should aggregate duplicate lots by ticker by default when answering portfolio questions.
+- The UI should present grouped holdings as the default portfolio view.
+- Lot-level rows should be secondary detail, revealed through a manage/view-lots action rather than shown alongside the grouped table by default.
+- Import and manual add/edit flows should live in secondary panels, not as always-open primary cards.
 
 ## Import Contract
 
@@ -121,3 +124,4 @@ V1 is successful when:
 - the API returns both lot rows and grouped ticker summaries
 - the UI can replace the current portfolio from pasted rows without manual one-by-one entry
 - QA aggregates duplicate holdings cleanly for portfolio answers
+- the main portfolio screen defaults to one grouped holdings table instead of duplicating grouped and raw-lot tables

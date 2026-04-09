@@ -65,3 +65,19 @@ This checklist covers duplicate-ticker portfolio support, grouped summaries, and
 **Commit / Push Gate**
 - [x] Commit after QA regression tests pass.
 - [x] Push after live QA verification succeeds.
+
+## Phase 5 — Portfolio UI Cleanup
+
+- [x] Make grouped holdings the default primary portfolio table.
+- [x] Move lot-level rows behind a per-ticker manage/view action.
+- [x] Move import and manual add/edit flows into secondary panels instead of always-open cards.
+- [x] Keep position editing and removal available from the lot detail view.
+
+**Phase 5 Tests**
+- [x] Build: frontend compiles with grouped-first portfolio UI.
+- [x] Review: duplicate lots are no longer shown as redundant top-level tables.
+- [x] Review: manual add/edit and replace import remain accessible through secondary panels.
+
+**Commit / Push Gate**
+- [x] Commit after grouped-first UI verification passes.
+- [x] Push after the cleaned portfolio page is verified.

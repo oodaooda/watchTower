@@ -164,6 +164,9 @@ export default function PortfolioPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingPositionId, setEditingPositionId] = useState<number | null>(null);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [showEditPanel, setShowEditPanel] = useState(false);
+  const [showImportPanel, setShowImportPanel] = useState(false);
   const [symbol, setSymbol] = useState("");
   const [quantity, setQuantity] = useState("");
   const [avgCostBasis, setAvgCostBasis] = useState("");
@@ -193,6 +196,7 @@ export default function PortfolioPage() {
     setQuantity("");
     setAvgCostBasis("");
     setNotes("");
+    setShowEditPanel(false);
   };
 
   const handleEdit = (position: PortfolioPosition) => {
@@ -201,6 +205,8 @@ export default function PortfolioPage() {
     setQuantity(String(position.quantity));
     setAvgCostBasis(String(position.avg_cost_basis));
     setNotes(position.notes || "");
+    setSelectedTicker(position.ticker);
+    setShowEditPanel(true);
   };
 
   const importPreview = useMemo(() => parsePortfolioImport(importText), [importText]);
@@ -260,6 +266,7 @@ export default function PortfolioPage() {
       const data = await importPortfolioPositions(importPreview.rows, true);
       setPortfolio(data);
       setImportText("");
+      setShowImportPanel(false);
       resetForm();
     } catch (err) {
       setError((err as Error).message || "Failed to import portfolio");
@@ -271,6 +278,10 @@ export default function PortfolioPage() {
   const summary = portfolio?.summary;
   const positions = portfolio?.positions || [];
   const groups = portfolio?.groups || [];
+  const selectedLots = useMemo(
+    () => positions.filter((position) => position.ticker === selectedTicker),
+    [positions, selectedTicker],
+  );
 
   const cards = useMemo(
     () => [
@@ -299,6 +310,22 @@ export default function PortfolioPage() {
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <button
+          className={btn}
+          onClick={() => {
+            resetForm();
+            setShowEditPanel(true);
+          }}
+          disabled={saving}
+        >
+          Add Position
+        </button>
+        <button className={btnGhost} onClick={() => setShowImportPanel((value) => !value)} disabled={saving}>
+          {showImportPanel ? "Hide Import" : "Import Portfolio"}
+        </button>
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((item) => (
           <div key={item.label} className={`${card} p-4`}>
@@ -308,51 +335,53 @@ export default function PortfolioPage() {
         ))}
       </div>
 
-      <div className={`${card} p-4 space-y-3`}>
-        <div>
-          <div className="text-sm font-semibold">Replace Portfolio From Paste</div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            Canonical format: <code>ticker,quantity,avg_cost_basis[,notes]</code>. Header rows are accepted, and pasted tables with
-            columns like Symbol, Shares, and Cost Basis are also recognized. This import replaces the current saved portfolio.
-          </div>
-        </div>
-        <textarea
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-          placeholder={"ticker,quantity,avg_cost_basis\nAMD,26,219.18\nAMD,10,189.79\nVGT,509.913,619.22"}
-          className="min-h-32 w-full rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-3 text-sm"
-        />
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <div className="text-zinc-500">Parsed rows: {importPreview.rows.length}</div>
-          <div className={importPreview.errors.length ? "text-red-500" : "text-zinc-500"}>
-            Errors: {importPreview.errors.length}
-          </div>
-          <button className={btn} onClick={() => void handleReplaceImport()} disabled={saving || !importPreview.rows.length || importPreview.errors.length > 0}>
-            {saving ? "Importing..." : "Replace Portfolio"}
-          </button>
-        </div>
-        {importPreview.errors.length ? (
-          <div className="rounded-2xl border border-red-300/40 bg-red-50/60 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200">
-            {importPreview.errors.map((message) => (
-              <div key={message}>{message}</div>
-            ))}
-          </div>
-        ) : null}
-        {importPreview.rows.length ? (
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3 text-sm">
-            <div className="mb-2 font-medium">Import preview</div>
-            <div className="space-y-1 text-zinc-600 dark:text-zinc-300">
-              {importPreview.rows.slice(0, 8).map((row, idx) => (
-                <div key={`${row.ticker}-${idx}`}>
-                  {row.ticker}: {fmtNumber(row.quantity)} units at {fmtCurrency(row.avg_cost_basis)}
-                  {row.notes ? ` (${row.notes})` : ""}
-                </div>
-              ))}
-              {importPreview.rows.length > 8 ? <div>…and {importPreview.rows.length - 8} more row(s).</div> : null}
+      {showImportPanel ? (
+        <div className={`${card} p-4 space-y-3`}>
+          <div>
+            <div className="text-sm font-semibold">Replace Portfolio From Paste</div>
+            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+              Canonical format: <code>ticker,quantity,avg_cost_basis[,notes]</code>. Header rows are accepted, and pasted tables with
+              columns like Symbol, Shares, and Cost Basis are also recognized. This import replaces the current saved portfolio.
             </div>
           </div>
-        ) : null}
-      </div>
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            placeholder={"ticker,quantity,avg_cost_basis\nAMD,26,219.18\nAMD,10,189.79\nVGT,509.913,619.22"}
+            className="min-h-32 w-full rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-3 text-sm"
+          />
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <div className="text-zinc-500">Parsed rows: {importPreview.rows.length}</div>
+            <div className={importPreview.errors.length ? "text-red-500" : "text-zinc-500"}>
+              Errors: {importPreview.errors.length}
+            </div>
+            <button className={btn} onClick={() => void handleReplaceImport()} disabled={saving || !importPreview.rows.length || importPreview.errors.length > 0}>
+              {saving ? "Importing..." : "Replace Portfolio"}
+            </button>
+          </div>
+          {importPreview.errors.length ? (
+            <div className="rounded-2xl border border-red-300/40 bg-red-50/60 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200">
+              {importPreview.errors.map((message) => (
+                <div key={message}>{message}</div>
+              ))}
+            </div>
+          ) : null}
+          {importPreview.rows.length ? (
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3 text-sm">
+              <div className="mb-2 font-medium">Import preview</div>
+              <div className="space-y-1 text-zinc-600 dark:text-zinc-300">
+                {importPreview.rows.slice(0, 8).map((row, idx) => (
+                  <div key={`${row.ticker}-${idx}`}>
+                    {row.ticker}: {fmtNumber(row.quantity)} units at {fmtCurrency(row.avg_cost_basis)}
+                    {row.notes ? ` (${row.notes})` : ""}
+                  </div>
+                ))}
+                {importPreview.rows.length > 8 ? <div>…and {importPreview.rows.length - 8} more row(s).</div> : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {summary?.has_unpriced_positions ? (
         <div className="rounded-2xl border border-amber-300/40 bg-amber-50/60 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200">
@@ -360,59 +389,68 @@ export default function PortfolioPage() {
         </div>
       ) : null}
 
-      <div className={`${card} p-4`}>
-        <div className="mb-3 text-sm font-semibold">{editingPositionId ? `Edit Position #${editingPositionId}` : "Add Position"}</div>
-        <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-          <label className="text-sm">
-            Symbol
-            <input
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ""))}
-              placeholder="AAPL or VGT"
-              disabled={Boolean(editingPositionId)}
-              className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm uppercase disabled:opacity-60"
-            />
-          </label>
-          <label className="text-sm">
-            Quantity
-            <input
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="10"
-              inputMode="decimal"
-              className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
-            />
-          </label>
-          <label className="text-sm">
-            Avg Cost Basis
-            <input
-              value={avgCostBasis}
-              onChange={(e) => setAvgCostBasis(e.target.value)}
-              placeholder="150"
-              inputMode="decimal"
-              className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
-            />
-          </label>
-          <label className="text-sm md:col-span-2 xl:col-span-2">
-            Notes
-            <input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional note"
-              className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
-            />
-          </label>
-          <div className="flex items-end gap-2 md:col-span-4 xl:col-span-2">
-            <button type="submit" className={btn} disabled={saving}>
-              {saving ? "Saving..." : editingPositionId ? "Update Position" : "Add Position"}
-            </button>
+      {showEditPanel ? (
+        <div className={`${card} p-4`}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold">{editingPositionId ? `Edit Position #${editingPositionId}` : "Add Position"}</div>
             <button type="button" className={btnGhost} onClick={resetForm} disabled={saving}>
-              Clear
+              Close
             </button>
           </div>
-        </form>
-        {error ? <div className="mt-3 text-sm text-red-500">{error}</div> : null}
-      </div>
+          <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+            <label className="text-sm">
+              Symbol
+              <input
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ""))}
+                placeholder="AAPL or VGT"
+                disabled={Boolean(editingPositionId)}
+                className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm uppercase disabled:opacity-60"
+              />
+            </label>
+            <label className="text-sm">
+              Quantity
+              <input
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                placeholder="10"
+                inputMode="decimal"
+                className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
+              />
+            </label>
+            <label className="text-sm">
+              Avg Cost Basis
+              <input
+                value={avgCostBasis}
+                onChange={(e) => setAvgCostBasis(e.target.value)}
+                placeholder="150"
+                inputMode="decimal"
+                className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
+              />
+            </label>
+            <label className="text-sm md:col-span-2 xl:col-span-2">
+              Notes
+              <input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional note"
+                className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
+              />
+            </label>
+            <div className="flex items-end gap-2 md:col-span-4 xl:col-span-2">
+              <button type="submit" className={btn} disabled={saving}>
+                {saving ? "Saving..." : editingPositionId ? "Update Position" : "Add Position"}
+              </button>
+              <button type="button" className={btnGhost} onClick={resetForm} disabled={saving}>
+                Clear
+              </button>
+            </div>
+          </form>
+          {error ? <div className="mt-3 text-sm text-red-500">{error}</div> : null}
+        </div>
+      ) : error ? (
+        <div className="text-sm text-red-500">{error}</div>
+      ) : null}
 
       <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
         <table className="min-w-full text-sm">
@@ -428,12 +466,13 @@ export default function PortfolioPage() {
               <th className="px-3 py-3 text-right">Market Value</th>
               <th className="px-3 py-3 text-right">Gain/Loss</th>
               <th className="px-3 py-3 text-right">Weight</th>
+              <th className="px-3 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {groups.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-center text-zinc-500" colSpan={10}>
+                <td className="px-3 py-6 text-center text-zinc-500" colSpan={11}>
                   {loading ? "Loading grouped summary..." : "No grouped holdings yet."}
                 </td>
               </tr>
@@ -452,6 +491,11 @@ export default function PortfolioPage() {
                     {fmtCurrency(group.unrealized_gain_loss)}
                   </td>
                   <td className="px-3 py-3 text-right">{fmtPercent(group.portfolio_weight)}</td>
+                  <td className="px-3 py-3 text-right">
+                    <button className="text-sm text-sky-600 hover:underline" onClick={() => setSelectedTicker(group.ticker)}>
+                      {selectedTicker === group.ticker ? "Viewing Lots" : group.lot_count > 1 ? "View Lots" : "Manage"}
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -459,74 +503,73 @@ export default function PortfolioPage() {
         </table>
       </div>
 
-      <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
-        <table className="min-w-full text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-3 py-3">ID</th>
-              <th className="px-3 py-3">Symbol</th>
-              <th className="px-3 py-3">Asset</th>
-              <th className="px-3 py-3">Type</th>
-              <th className="px-3 py-3 text-right">Source</th>
-              <th className="px-3 py-3 text-right">Quantity</th>
-              <th className="px-3 py-3 text-right">Avg Cost</th>
-              <th className="px-3 py-3 text-right">Cost Basis</th>
-              <th className="px-3 py-3 text-right">Price</th>
-              <th className="px-3 py-3 text-right">Market Value</th>
-              <th className="px-3 py-3 text-right">Gain/Loss</th>
-              <th className="px-3 py-3 text-right">Gain/Loss %</th>
-              <th className="px-3 py-3 text-right">Weight</th>
-              <th className="px-3 py-3 text-right">Price State</th>
-              <th className="px-3 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {positions.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-center text-zinc-500" colSpan={15}>
-                  {loading ? "Loading portfolio..." : "No positions yet — add a stock or ETF above."}
-                </td>
-              </tr>
-            ) : (
-              positions.map((position) => (
-                <tr
-                  key={position.position_id}
-                  className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
-                >
-                  <td className="px-3 py-3 text-zinc-500">{position.position_id}</td>
-                  <td className="px-3 py-3 font-semibold">{position.ticker}</td>
-                  <td className="px-3 py-3">{position.name || "—"}</td>
-                  <td className="px-3 py-3 uppercase">{position.asset_type}</td>
-                  <td className="px-3 py-3 text-right uppercase text-xs text-zinc-500">{position.entry_source}</td>
-                  <td className="px-3 py-3 text-right">{fmtNumber(position.quantity)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(position.avg_cost_basis)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(position.total_cost_basis)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(position.current_price)}</td>
-                  <td className="px-3 py-3 text-right">{fmtCurrency(position.market_value)}</td>
-                  <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss && position.unrealized_gain_loss > 0 ? "text-emerald-500" : position.unrealized_gain_loss && position.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
-                    {fmtCurrency(position.unrealized_gain_loss)}
-                  </td>
-                  <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct > 0 ? "text-emerald-500" : position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct < 0 ? "text-red-500" : ""}`}>
-                    {fmtPercent(position.unrealized_gain_loss_pct)}
-                  </td>
-                  <td className="px-3 py-3 text-right">{fmtPercent(position.portfolio_weight)}</td>
-                  <td className="px-3 py-3 text-right text-xs text-zinc-500">{priceStatusLabel(position.price_status)}</td>
-                  <td className="px-3 py-3 text-right">
-                    <div className="flex justify-end gap-3">
-                      <button className="text-sm text-sky-600 hover:underline" onClick={() => handleEdit(position)}>
-                        Edit
-                      </button>
-                      <button className="text-sm text-red-500 hover:underline" onClick={() => void handleDelete(position.position_id)}>
-                        Remove
-                      </button>
-                    </div>
-                  </td>
+      {selectedTicker ? (
+        <div className={`${card} p-4`}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">{selectedTicker} Lots</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Manage the individual lots that roll up into the grouped holding.
+              </div>
+            </div>
+            <button type="button" className={btnGhost} onClick={() => setSelectedTicker(null)}>
+              Close
+            </button>
+          </div>
+          <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
+            <table className="min-w-full text-sm">
+              <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="px-3 py-3">ID</th>
+                  <th className="px-3 py-3 text-right">Source</th>
+                  <th className="px-3 py-3 text-right">Quantity</th>
+                  <th className="px-3 py-3 text-right">Avg Cost</th>
+                  <th className="px-3 py-3 text-right">Cost Basis</th>
+                  <th className="px-3 py-3 text-right">Price</th>
+                  <th className="px-3 py-3 text-right">Market Value</th>
+                  <th className="px-3 py-3 text-right">Gain/Loss</th>
+                  <th className="px-3 py-3 text-right">Gain/Loss %</th>
+                  <th className="px-3 py-3 text-right">Price State</th>
+                  <th className="px-3 py-3 text-right">Actions</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {selectedLots.map((position) => (
+                  <tr
+                    key={position.position_id}
+                    className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
+                  >
+                    <td className="px-3 py-3 text-zinc-500">{position.position_id}</td>
+                    <td className="px-3 py-3 text-right uppercase text-xs text-zinc-500">{position.entry_source}</td>
+                    <td className="px-3 py-3 text-right">{fmtNumber(position.quantity)}</td>
+                    <td className="px-3 py-3 text-right">{fmtCurrency(position.avg_cost_basis)}</td>
+                    <td className="px-3 py-3 text-right">{fmtCurrency(position.total_cost_basis)}</td>
+                    <td className="px-3 py-3 text-right">{fmtCurrency(position.current_price)}</td>
+                    <td className="px-3 py-3 text-right">{fmtCurrency(position.market_value)}</td>
+                    <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss && position.unrealized_gain_loss > 0 ? "text-emerald-500" : position.unrealized_gain_loss && position.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
+                      {fmtCurrency(position.unrealized_gain_loss)}
+                    </td>
+                    <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct > 0 ? "text-emerald-500" : position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct < 0 ? "text-red-500" : ""}`}>
+                      {fmtPercent(position.unrealized_gain_loss_pct)}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-zinc-500">{priceStatusLabel(position.price_status)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="flex justify-end gap-3">
+                        <button className="text-sm text-sky-600 hover:underline" onClick={() => handleEdit(position)}>
+                          Edit
+                        </button>
+                        <button className="text-sm text-red-500 hover:underline" onClick={() => void handleDelete(position.position_id)}>
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
