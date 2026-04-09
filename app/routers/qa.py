@@ -285,20 +285,21 @@ def _build_portfolio_answer(
     requested_tickers: List[str],
 ) -> str:
     positions = list(overview.get("positions") or [])
+    groups = list(overview.get("groups") or positions)
     summary = dict(overview.get("summary") or {})
     requested_upper = {ticker.upper() for ticker in requested_tickers if isinstance(ticker, str)}
     if requested_upper and not _is_portfolio_group_compare_question(question):
-        positions = [position for position in positions if str(position.get("ticker") or "").upper() in requested_upper]
-        if not positions:
+        groups = [position for position in groups if str(position.get("ticker") or "").upper() in requested_upper]
+        if not groups:
             requested_label = ", ".join(sorted(requested_upper))
             return f"No portfolio position is currently saved for {requested_label}."
 
-    analytics = _portfolio_summary_data(positions)
+    analytics = _portfolio_summary_data(groups)
     q = (question or "").strip().lower()
 
     if _is_portfolio_group_compare_question(question):
         grouped: Dict[str, List[Dict[str, Any]]] = {"etf": [], "equity": []}
-        for position in positions:
+        for position in groups:
             grouped.setdefault(str(position.get("asset_type") or "equity"), []).append(position)
         lines = ["Portfolio asset mix:"]
         for asset_type in ("etf", "equity"):
@@ -310,7 +311,7 @@ def _build_portfolio_answer(
                 gain = market_value - total_cost_basis
             label = "ETF holdings" if asset_type == "etf" else "Stock holdings"
             lines.append(
-                f"- {label}: {len(bucket)} position(s), cost basis {total_cost_basis:,.2f}, "
+                f"- {label}: {len(bucket)} grouped holding(s), cost basis {total_cost_basis:,.2f}, "
                 f"market value {market_value:,.2f}" + (f", unrealized gain/loss {gain:,.2f}" if gain is not None else ", market value incomplete")
             )
         return "\n".join(lines)
@@ -328,15 +329,18 @@ def _build_portfolio_answer(
         return "\n".join(lines)
 
     if _is_portfolio_gain_question(question):
-        if len(positions) == 1:
-            position = positions[0]
+        if len(groups) == 1:
+            position = groups[0]
             gain = position.get("unrealized_gain_loss")
             gain_pct = position.get("unrealized_gain_loss_pct")
             if gain is None:
                 return f"{position.get('ticker')} does not have a usable quote yet, so I cannot calculate its unrealized gain/loss."
+            lot_count = int(position.get("lot_count") or 1)
+            lot_note = f" across {lot_count} lots" if lot_count > 1 else ""
             return (
                 f"{position.get('ticker')} is up {gain:,.2f} "
-                f"({((gain_pct or 0.0) * 100):.2f}%) versus an average cost basis of {(position.get('avg_cost_basis') or 0.0):,.2f}."
+                f"({((gain_pct or 0.0) * 100):.2f}%) versus an average cost basis of "
+                f"{(position.get('weighted_avg_cost_basis') or position.get('avg_cost_basis') or 0.0):,.2f}{lot_note}."
             )
         gainers = analytics["gainers"]
         if gainers:
@@ -365,21 +369,24 @@ def _build_portfolio_answer(
                 if summary.get("total_market_value") is not None
                 else "market value is incomplete because one or more positions do not have a usable quote."
             ),
-            "Positions:",
+            "Grouped holdings:",
         ]
-        for position in positions[:10]:
+        for position in groups[:10]:
             gain = position.get("unrealized_gain_loss")
             gain_pct = position.get("unrealized_gain_loss_pct")
             gain_text = "quote unavailable"
             if gain is not None:
                 gain_text = f"gain/loss {gain:,.2f} ({((gain_pct or 0.0) * 100):.2f}%)"
+            lot_count = int(position.get("lot_count") or 1)
             lines.append(
-                f"- {position.get('ticker')} ({position.get('asset_type')}): {position.get('quantity')} units at avg cost {(position.get('avg_cost_basis') or 0.0):,.2f}, "
+                f"- {position.get('ticker')} ({position.get('asset_type')}, {lot_count} lot{'s' if lot_count != 1 else ''}): "
+                f"{(position.get('total_quantity') or position.get('quantity') or 0.0)} units at avg cost "
+                f"{(position.get('weighted_avg_cost_basis') or position.get('avg_cost_basis') or 0.0):,.2f}, "
                 f"current price {(position.get('current_price') or 0.0):,.2f}, {gain_text}."
             )
-        extra = len(positions) - min(len(positions), 10)
+        extra = len(groups) - min(len(groups), 10)
         if extra > 0:
-            lines.append(f"- {extra} additional position(s) omitted for brevity.")
+            lines.append(f"- {extra} additional grouped holding(s) omitted for brevity.")
         return "\n".join(lines)
 
     return ""
@@ -2406,7 +2413,14 @@ def _answer_question(
             )
 
     if not companies and use_portfolio and portfolio_positions:
-        portfolio_companies = [position.company for position in portfolio_positions if position.company]
+        portfolio_companies = []
+        seen_company_ids = set()
+        for position in portfolio_positions:
+            company = position.company
+            if not company or company.id in seen_company_ids:
+                continue
+            seen_company_ids.add(company.id)
+            portfolio_companies.append(company)
         if len(portfolio_companies) > favorites_scope_limit:
             portfolio_truncated = True
             portfolio_companies = portfolio_companies[:favorites_scope_limit]

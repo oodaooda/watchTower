@@ -957,8 +957,9 @@ def test_answer_question_portfolio_summary_returns_mixed_holdings(monkeypatch):
 
         response = _answer_question("tell me about my portfolio", db=db)
         assert "Portfolio summary:" in response.answer
-        assert "AAPL (equity)" in response.answer
-        assert "VGT (etf)" in response.answer
+        assert "Grouped holdings:" in response.answer
+        assert "AAPL (equity, 1 lot)" in response.answer
+        assert "VGT (etf, 1 lot)" in response.answer
         assert response.data["plan"]["use_portfolio"] is True
         assert response.data["plan"]["portfolio_total_positions"] == 2
         assert "portfolio_positions" in response.citations
@@ -988,6 +989,40 @@ def test_answer_question_portfolio_gain_for_explicit_symbol(monkeypatch):
 
         response = _answer_question("what is my gain on VGT?", db=db)
         assert "VGT is up 250.00" in response.answer
+        assert response.data["plan"]["use_portfolio"] is True
+        assert "portfolio_positions" in response.citations
+
+
+def test_answer_question_portfolio_gain_aggregates_duplicate_symbol_lots(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        vgt = Company(ticker="VGT", name="VGT ETF", asset_type="etf")
+        db.add(vgt)
+        db.commit()
+        db.refresh(vgt)
+        db.add_all(
+            [
+                PortfolioPosition(company_id=vgt.id, quantity=5, avg_cost_basis=400),
+                PortfolioPosition(company_id=vgt.id, quantity=2, avg_cost_basis=420),
+            ]
+        )
+        db.commit()
+
+        monkeypatch.setattr("app.routers.portfolio.fetch_alpha_quotes", lambda tickers: {
+            "VGT": {"price": 450.0, "source": "alpha_vantage", "status": "live"},
+        })
+
+        response = _answer_question("what is my gain on VGT?", db=db)
+        assert "VGT is up 310.00" in response.answer
+        assert "across 2 lots" in response.answer
         assert response.data["plan"]["use_portfolio"] is True
         assert "portfolio_positions" in response.citations
 

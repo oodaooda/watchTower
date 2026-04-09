@@ -53,15 +53,15 @@ This checklist covers duplicate-ticker portfolio support, grouped summaries, and
 
 ## Phase 4 — Portfolio QA Aggregation
 
-- [ ] Aggregate duplicate lots by ticker in portfolio-aware QA answers.
-- [ ] Keep explicit symbol questions focused on grouped ticker totals by default.
-- [ ] Preserve ETF-vs-stock grouping behavior with duplicate lots present.
+- [x] Aggregate duplicate lots by ticker in portfolio-aware QA answers.
+- [x] Keep explicit symbol questions focused on grouped ticker totals by default.
+- [x] Preserve ETF-vs-stock grouping behavior with duplicate lots present.
 
 **Phase 4 Tests**
-- [ ] Unit: gain answers aggregate duplicate lots for the same ticker.
-- [ ] Integration: "tell me about my portfolio" returns grouped ticker summaries.
-- [ ] Integration: "what is my gain on VGT?" aggregates all saved VGT lots.
+- [x] Unit: gain answers aggregate duplicate lots for the same ticker.
+- [x] Integration: "tell me about my portfolio" returns grouped ticker summaries.
+- [x] Integration: "what is my gain on VGT?" aggregates all saved VGT lots.
 
 **Commit / Push Gate**
-- [ ] Commit after QA regression tests pass.
-- [ ] Push after live QA verification succeeds.
+- [x] Commit after QA regression tests pass.
+- [x] Push after live QA verification succeeds.
