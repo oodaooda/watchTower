@@ -16,12 +16,40 @@ from app.core.schemas import (
     PortfolioPositionItem,
     PortfolioTickerGroupItem,
     PortfolioPositionUpdate,
+    PortfolioSnapshotHistory,
+    PortfolioSnapshotItem,
     PortfolioSummary,
+)
+from app.services.portfolio_snapshots import (
+    create_or_update_portfolio_snapshot,
+    load_portfolio_snapshots,
+    snapshot_history_summary,
 )
 from app.services.assets import find_or_create_asset, normalize_symbol, resolve_asset
 from app.services.quotes import fetch_alpha_quotes, resolve_current_quote
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+
+
+def _serialize_snapshot_history(db: Session) -> PortfolioSnapshotHistory:
+    snapshots = load_portfolio_snapshots(db)
+    return PortfolioSnapshotHistory(
+        snapshots=[
+            PortfolioSnapshotItem(
+                snapshot_date=row.snapshot_date.isoformat(),
+                total_cost_basis=float(row.total_cost_basis),
+                total_market_value=float(row.total_market_value) if row.total_market_value is not None else None,
+                unrealized_gain_loss=float(row.unrealized_gain_loss) if row.unrealized_gain_loss is not None else None,
+                unrealized_gain_loss_pct=float(row.unrealized_gain_loss_pct) if row.unrealized_gain_loss_pct is not None else None,
+                is_complete=bool(row.is_complete),
+                priced_positions=int(row.priced_positions or 0),
+                unpriced_positions=int(row.unpriced_positions or 0),
+                source=row.source or "asset_price_daily",
+            )
+            for row in snapshots
+        ],
+        summary=snapshot_history_summary(snapshots),
+    )
 
 
 def _validate_position_fields(quantity: float | None, avg_cost_basis: float | None) -> None:
@@ -165,6 +193,17 @@ def _load_positions(db: Session) -> List[PortfolioPosition]:
 @router.get("", response_model=PortfolioOverview)
 def get_portfolio(db: Session = Depends(get_db)):
     return _serialize_portfolio_positions(db, _load_positions(db))
+
+
+@router.get("/snapshots", response_model=PortfolioSnapshotHistory)
+def get_portfolio_snapshots(db: Session = Depends(get_db)):
+    return _serialize_snapshot_history(db)
+
+
+@router.post("/snapshots/run", response_model=PortfolioSnapshotHistory)
+def run_portfolio_snapshot(db: Session = Depends(get_db)):
+    create_or_update_portfolio_snapshot(db)
+    return _serialize_snapshot_history(db)
 
 
 @router.post("", response_model=PortfolioOverview)

@@ -295,6 +295,30 @@ class PortfolioImportRequest(BaseModel):
     replace_existing: bool = False
 
 
+class PortfolioSnapshotItem(BaseModel):
+    snapshot_date: str
+    total_cost_basis: float
+    total_market_value: Optional[float] = None
+    unrealized_gain_loss: Optional[float] = None
+    unrealized_gain_loss_pct: Optional[float] = None
+    is_complete: bool
+    priced_positions: int
+    unpriced_positions: int
+    source: str = "asset_price_daily"
+
+
+class PortfolioSnapshotChange(BaseModel):
+    start_date: str
+    end_date: str
+    change: float
+    change_pct: Optional[float] = None
+
+
+class PortfolioSnapshotHistory(BaseModel):
+    snapshots: List[PortfolioSnapshotItem] = Field(default_factory=list)
+    summary: Dict[str, Optional[PortfolioSnapshotChange]] = Field(default_factory=dict)
+
+
 # ---------- Modeling ----------
 class ModelingAssumptionOut(BaseModel):
     scenario: str

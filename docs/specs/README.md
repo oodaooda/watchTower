@@ -10,6 +10,7 @@ Current specs reflect major shipped or in-flight surfaces:
 - `eod-price-history.md`
 - `multi-asset-portfolio.md`
 - `portfolio-lots-import.md`
+- `portfolio-market-value-snapshots.md`
 - `openclaw-api.md`
 - `usage-observability.md`
 

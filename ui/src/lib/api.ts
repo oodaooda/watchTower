@@ -424,6 +424,30 @@ export type PortfolioOverviewOut = {
   groups: PortfolioTickerGroup[];
 };
 
+export type PortfolioSnapshot = {
+  snapshot_date: string;
+  total_cost_basis: number;
+  total_market_value?: number | null;
+  unrealized_gain_loss?: number | null;
+  unrealized_gain_loss_pct?: number | null;
+  is_complete: boolean;
+  priced_positions: number;
+  unpriced_positions: number;
+  source: string;
+};
+
+export type PortfolioSnapshotChange = {
+  start_date: string;
+  end_date: string;
+  change: number;
+  change_pct?: number | null;
+};
+
+export type PortfolioSnapshotHistory = {
+  snapshots: PortfolioSnapshot[];
+  summary: Record<string, PortfolioSnapshotChange | null | undefined>;
+};
+
 export type PortfolioPositionIn = {
   ticker: string;
   quantity: number;
@@ -486,6 +510,20 @@ export async function importPortfolioPositions(
     body: JSON.stringify({ positions, replace_existing: replaceExisting }),
   });
   if (!res.ok) throw new Error(`portfolio/import ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPortfolioSnapshots(): Promise<PortfolioSnapshotHistory> {
+  const res = await fetch(`${API_BASE}/portfolio/snapshots`);
+  if (!res.ok) throw new Error(`portfolio/snapshots ${res.status}`);
+  return res.json();
+}
+
+export async function runPortfolioSnapshot(): Promise<PortfolioSnapshotHistory> {
+  const res = await fetch(`${API_BASE}/portfolio/snapshots/run`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`portfolio/snapshots/run ${res.status}`);
   return res.json();
 }
 

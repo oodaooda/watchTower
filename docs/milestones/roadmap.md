@@ -22,3 +22,7 @@ Detailed implementation tasks belong in milestone checklist files under `docs/mi
   - Spec: `../specs/eod-price-history.md`
   - Checklist: `M004_eod-price-history-checklist.md`
   - Current focus: persist daily closes and surface EOD trend views without implying full portfolio performance
+- `M005` - Portfolio Market Value Snapshots (`planned`)
+  - Spec: `../specs/portfolio-market-value-snapshots.md`
+  - Checklist: `M005_portfolio-market-value-snapshots-checklist.md`
+  - Current focus: forward-only daily portfolio market value snapshots from stored EOD closes

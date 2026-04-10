@@ -471,6 +471,23 @@ class PortfolioPosition(Base):
     company = relationship("Company")
 
 
+class PortfolioSnapshotDaily(Base):
+    __tablename__ = "portfolio_snapshots_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    total_cost_basis: Mapped[float] = mapped_column(Numeric(20, 6), nullable=False)
+    total_market_value: Mapped[float | None] = mapped_column(Numeric(20, 6), nullable=True)
+    unrealized_gain_loss: Mapped[float | None] = mapped_column(Numeric(20, 6), nullable=True)
+    unrealized_gain_loss_pct: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
+    is_complete: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    priced_positions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unpriced_positions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="asset_price_daily", server_default="asset_price_daily")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 class CompanyRiskMetric(Base):
     __tablename__ = "company_risk_metrics"
 

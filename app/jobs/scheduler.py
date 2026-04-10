@@ -31,6 +31,7 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, HTTPException
 
 from app.core.db import SessionLocal
+from app.services.portfolio_snapshots import create_or_update_portfolio_snapshot
 from app.services.price_history import sync_tracked_assets_daily_history
 
 log = logging.getLogger(__name__)
@@ -76,7 +77,12 @@ def daily_prices_job() -> None:
     db = SessionLocal()
     try:
         synced = sync_tracked_assets_daily_history(db)
-        log.info("[jobs] daily_prices_job done synced_assets=%s", synced)
+        snapshot = create_or_update_portfolio_snapshot(db)
+        log.info(
+            "[jobs] daily_prices_job done synced_assets=%s snapshot_date=%s",
+            synced,
+            snapshot.snapshot_date.isoformat() if snapshot else None,
+        )
     finally:
         db.close()
 

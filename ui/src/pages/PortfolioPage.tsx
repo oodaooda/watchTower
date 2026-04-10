@@ -1,14 +1,18 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import BackButton from "../components/BackButton";
+import PortfolioMarketValueChart from "../components/PortfolioMarketValueChart";
 import PriceHistoryChart from "../components/PriceHistoryChart";
 import {
   createPortfolioPosition,
   deletePortfolioPosition,
   fetchPortfolio,
+  fetchPortfolioSnapshots,
   importPortfolioPositions,
   PortfolioOverviewOut,
+  PortfolioSnapshotHistory,
   PortfolioPosition,
   PortfolioTickerGroup,
+  runPortfolioSnapshot,
   updatePortfolioPosition,
 } from "../lib/api";
 
@@ -180,6 +184,10 @@ export default function PortfolioPage() {
   const [avgCostBasis, setAvgCostBasis] = useState("");
   const [notes, setNotes] = useState("");
   const [importText, setImportText] = useState("");
+  const [snapshotHistory, setSnapshotHistory] = useState<PortfolioSnapshotHistory | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotSaving, setSnapshotSaving] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
   const loadPortfolio = useCallback(async () => {
     setLoading(true);
@@ -197,6 +205,22 @@ export default function PortfolioPage() {
   useEffect(() => {
     void loadPortfolio();
   }, [loadPortfolio]);
+
+  const loadSnapshots = useCallback(async () => {
+    setSnapshotLoading(true);
+    try {
+      setSnapshotError(null);
+      setSnapshotHistory(await fetchPortfolioSnapshots());
+    } catch (err) {
+      setSnapshotError((err as Error).message || "Failed to load portfolio snapshots");
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSnapshots();
+  }, [loadSnapshots]);
 
   const resetForm = () => {
     setEditingPositionId(null);
@@ -280,6 +304,18 @@ export default function PortfolioPage() {
       setError((err as Error).message || "Failed to import portfolio");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRunSnapshot = async () => {
+    setSnapshotSaving(true);
+    try {
+      setSnapshotError(null);
+      setSnapshotHistory(await runPortfolioSnapshot());
+    } catch (err) {
+      setSnapshotError((err as Error).message || "Failed to record portfolio snapshot");
+    } finally {
+      setSnapshotSaving(false);
     }
   };
 
@@ -445,6 +481,14 @@ export default function PortfolioPage() {
           {summary.unpriced_positions} position{summary.unpriced_positions === 1 ? "" : "s"} do not have a usable quote yet, so market value and gain totals are incomplete.
         </div>
       ) : null}
+
+      <PortfolioMarketValueChart
+        history={snapshotHistory}
+        loading={snapshotLoading}
+        error={snapshotError}
+        saving={snapshotSaving}
+        onRunSnapshot={() => void handleRunSnapshot()}
+      />
 
       {showEditPanel ? (
         <div className={`${card} p-4`}>
