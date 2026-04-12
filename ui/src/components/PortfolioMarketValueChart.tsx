@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -39,12 +40,15 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
           marketValue: Number(snapshot.total_market_value),
           costBasis: Number(snapshot.total_cost_basis),
           complete: snapshot.is_complete,
+          isInferred: snapshot.is_inferred,
+          source: snapshot.source,
         })),
     [snapshots],
   );
 
   const latestSnapshot = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
   const incompleteCount = snapshots.filter((snapshot) => !snapshot.is_complete).length;
+  const inferredBaseline = snapshots.find((snapshot) => snapshot.is_inferred);
   const summaryCards = [
     { key: "1d", label: "1D Market Value Change" },
     { key: "1m", label: "1M Market Value Change" },
@@ -62,7 +66,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         <div>
           <h2 className="text-lg font-semibold">Portfolio Market Value History</h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Forward-only daily snapshots from stored EOD closes. This is market value change, not cash-flow adjusted performance.
+            Starts with an inferred cost-basis baseline, then uses stored EOD closes. This is market value change, not cash-flow adjusted performance.
           </p>
         </div>
         <button
@@ -91,6 +95,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
           <span>Latest snapshot: {latestSnapshot.snapshot_date}</span>
           <span>Priced positions: {latestSnapshot.priced_positions}</span>
           <span>Unpriced positions: {latestSnapshot.unpriced_positions}</span>
+          {inferredBaseline ? <span>Baseline: inferred from current cost basis</span> : null}
         </div>
       ) : null}
 
@@ -122,13 +127,41 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
               <YAxis tickFormatter={(value) => fmtCurrency(Number(value))} width={88} />
               <Tooltip
                 labelFormatter={(value) => new Date(value as number).toLocaleDateString()}
-                formatter={(value: number, name: string) => [
-                  fmtCurrency(value),
-                  name === "marketValue" ? "Market Value" : "Cost Basis",
-                ]}
+                formatter={(value: number, name: string, item) => {
+                  const payload = item.payload as { isInferred?: boolean };
+                  const label =
+                    name === "marketValue"
+                      ? payload?.isInferred
+                        ? "Inferred Baseline"
+                        : "Market Value"
+                      : "Cost Basis";
+                  return [fmtCurrency(value), label];
+                }}
               />
-              <Line type="monotone" dataKey="marketValue" stroke="#0284c7" strokeWidth={2} dot={false} />
+              <Line
+                type="monotone"
+                dataKey="marketValue"
+                stroke="#0284c7"
+                strokeWidth={2}
+                dot={({ cx, cy, payload }) =>
+                  payload?.isInferred ? <circle cx={cx} cy={cy} r={4} fill="#0284c7" stroke="#fff" strokeWidth={1.5} /> : <circle cx={cx} cy={cy} r={0} />
+                }
+                activeDot={{ r: 5 }}
+              />
               <Line type="monotone" dataKey="costBasis" stroke="#71717a" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+              {chartData
+                .filter((point) => point.isInferred)
+                .map((point) => (
+                  <ReferenceDot
+                    key={`baseline-${point.ts}`}
+                    x={point.ts}
+                    y={point.marketValue}
+                    r={5}
+                    fill="#0284c7"
+                    stroke="#ffffff"
+                    label={{ value: "Baseline", position: "top", fill: "#0284c7", fontSize: 11 }}
+                  />
+                ))}
             </LineChart>
           </ResponsiveContainer>
         </div>

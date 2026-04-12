@@ -434,6 +434,7 @@ export type PortfolioSnapshot = {
   priced_positions: number;
   unpriced_positions: number;
   source: string;
+  is_inferred: boolean;
 };
 
 export type PortfolioSnapshotChange = {

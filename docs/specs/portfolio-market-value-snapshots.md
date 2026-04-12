@@ -7,6 +7,7 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
 ## Scope
 
 - Daily portfolio market value snapshots from the day tracking starts forward
+- One inferred initial baseline point from current portfolio cost basis
 - Totals-only snapshot storage
 - Snapshot history API with daily/monthly/yearly change summaries
 - Portfolio UI chart/cards for market value history
@@ -19,14 +20,17 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
 - Contributions, withdrawals, realized gains, dividends, or taxes
 - Per-asset attribution snapshots
 - Time-weighted or money-weighted returns
+- Inferred daily closes between baseline and first real EOD snapshot
 
 ## Product Decisions
 
 - Snapshot timing should happen after EOD prices are refreshed.
 - Snapshot values use stored EOD closes, not live intraday quotes.
+- The chart may include one inferred initial cost-basis baseline point before the first real snapshot.
 - Snapshots are trading-day based, using available EOD price dates.
 - Snapshot totals are recomputable/idempotent for the latest trading day.
 - UI labels should say `Portfolio Market Value` or `Market Value Change`, not `Performance`.
+- Period summary cards should ignore the inferred baseline and use only real EOD snapshots.
 
 ## Core Contract
 
@@ -39,6 +43,8 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
   - `priced_positions`
   - `unpriced_positions`
 - Missing prices should not be silently treated as zero or converted into partial overall portfolio totals.
+- Emit one inferred baseline row in the history response when a portfolio exists, using current `quantity * avg_cost_basis`.
+- Mark the inferred baseline distinctly so the UI can label it as synthetic and not as a real close.
 
 ## API Contract
 

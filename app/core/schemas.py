@@ -305,6 +305,7 @@ class PortfolioSnapshotItem(BaseModel):
     priced_positions: int
     unpriced_positions: int
     source: str = "asset_price_daily"
+    is_inferred: bool = False
 
 
 class PortfolioSnapshotChange(BaseModel):

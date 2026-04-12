@@ -22,6 +22,7 @@ from app.core.schemas import (
 )
 from app.services.portfolio_snapshots import (
     create_or_update_portfolio_snapshot,
+    inferred_baseline_snapshot,
     load_portfolio_snapshots,
     snapshot_history_summary,
 )
@@ -33,8 +34,25 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 def _serialize_snapshot_history(db: Session) -> PortfolioSnapshotHistory:
     snapshots = load_portfolio_snapshots(db)
+    baseline = inferred_baseline_snapshot(db, snapshots)
+    items = []
+    if baseline:
+        items.append(
+            PortfolioSnapshotItem(
+                snapshot_date=str(baseline["snapshot_date"]),
+                total_cost_basis=float(baseline["total_cost_basis"]),
+                total_market_value=float(baseline["total_market_value"]) if baseline["total_market_value"] is not None else None,
+                unrealized_gain_loss=float(baseline["unrealized_gain_loss"]) if baseline["unrealized_gain_loss"] is not None else None,
+                unrealized_gain_loss_pct=float(baseline["unrealized_gain_loss_pct"]) if baseline["unrealized_gain_loss_pct"] is not None else None,
+                is_complete=bool(baseline["is_complete"]),
+                priced_positions=int(baseline["priced_positions"]),
+                unpriced_positions=int(baseline["unpriced_positions"]),
+                source=str(baseline["source"]),
+                is_inferred=bool(baseline["is_inferred"]),
+            )
+        )
     return PortfolioSnapshotHistory(
-        snapshots=[
+        snapshots=items + [
             PortfolioSnapshotItem(
                 snapshot_date=row.snapshot_date.isoformat(),
                 total_cost_basis=float(row.total_cost_basis),
@@ -45,6 +63,7 @@ def _serialize_snapshot_history(db: Session) -> PortfolioSnapshotHistory:
                 priced_positions=int(row.priced_positions or 0),
                 unpriced_positions=int(row.unpriced_positions or 0),
                 source=row.source or "asset_price_daily",
+                is_inferred=False,
             )
             for row in snapshots
         ],

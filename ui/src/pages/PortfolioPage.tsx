@@ -419,6 +419,14 @@ export default function PortfolioPage() {
         </button>
       </div>
 
+      <PortfolioMarketValueChart
+        history={snapshotHistory}
+        loading={snapshotLoading}
+        error={snapshotError}
+        saving={snapshotSaving}
+        onRunSnapshot={() => void handleRunSnapshot()}
+      />
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((item) => (
           <div key={item.label} className={`${card} p-4`}>
@@ -481,14 +489,6 @@ export default function PortfolioPage() {
           {summary.unpriced_positions} position{summary.unpriced_positions === 1 ? "" : "s"} do not have a usable quote yet, so market value and gain totals are incomplete.
         </div>
       ) : null}
-
-      <PortfolioMarketValueChart
-        history={snapshotHistory}
-        loading={snapshotLoading}
-        error={snapshotError}
-        saving={snapshotSaving}
-        onRunSnapshot={() => void handleRunSnapshot()}
-      />
 
       {showEditPanel ? (
         <div className={`${card} p-4`}>

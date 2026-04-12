@@ -88,6 +88,39 @@ def load_portfolio_snapshots(db: Session) -> List[PortfolioSnapshotDaily]:
     ).all()
 
 
+def inferred_baseline_snapshot(
+    db: Session,
+    snapshots: Optional[List[PortfolioSnapshotDaily]] = None,
+) -> Optional[Dict[str, float | int | str | bool | None]]:
+    positions = db.scalars(select(PortfolioPosition)).all()
+    if not positions:
+        return None
+
+    total_cost_basis = 0.0
+    total_positions = 0
+    for position in positions:
+        quantity = _as_float(position.quantity)
+        avg_cost_basis = _as_float(position.avg_cost_basis)
+        total_cost_basis += quantity * avg_cost_basis
+        total_positions += 1
+
+    rows = snapshots if snapshots is not None else load_portfolio_snapshots(db)
+    first_real_date = rows[0].snapshot_date if rows else None
+    baseline_date = (first_real_date - timedelta(days=1)) if first_real_date else date.today()
+    return {
+        "snapshot_date": baseline_date.isoformat(),
+        "total_cost_basis": total_cost_basis,
+        "total_market_value": total_cost_basis,
+        "unrealized_gain_loss": 0.0,
+        "unrealized_gain_loss_pct": 0.0,
+        "is_complete": True,
+        "priced_positions": total_positions,
+        "unpriced_positions": 0,
+        "source": "initial_cost_basis_baseline",
+        "is_inferred": True,
+    }
+
+
 def _period_change(
     snapshots: List[PortfolioSnapshotDaily],
     *,

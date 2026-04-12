@@ -38,10 +38,13 @@ This checklist covers forward-only portfolio market value history based on store
 - [x] Add 1D/1M/YTD/1Y market value change cards.
 - [x] Keep UI labels focused on market value, not performance.
 - [x] Show incomplete snapshot warning and avoid charting incomplete portfolio totals.
+- [x] Add one inferred initial cost-basis baseline point.
+- [x] Move the chart to the top section of the portfolio page.
 
 **Phase 3 Tests**
 - [x] Build: frontend compiles with snapshot history UI.
 - [x] Review: wording avoids true-performance claims.
+- [x] Integration: snapshot API returns inferred baseline without affecting real-only summary cards.
 
 **Commit / Push Gate**
 - [x] Commit after frontend verification passes.
