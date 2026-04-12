@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import { PortfolioSnapshotHistory } from "../lib/api";
 
+const DEFAULT_VISIBLE_START = new Date("2026-01-01T00:00:00").getTime();
+
 type Props = {
   history: PortfolioSnapshotHistory | null;
   loading: boolean;
@@ -29,12 +31,23 @@ function fmtPercent(value?: number | null) {
   return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 2, signDisplay: "auto" }).format(value);
 }
 
+function fmtCompactCurrency(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 export default function PortfolioMarketValueChart({ history, loading, error, saving, onRunSnapshot }: Props) {
   const snapshots = history?.snapshots ?? [];
   const chartData = useMemo(
     () =>
       snapshots
         .filter((snapshot) => snapshot.total_market_value !== null && snapshot.total_market_value !== undefined)
+        .filter((snapshot) => new Date(`${snapshot.snapshot_date}T00:00:00`).getTime() >= DEFAULT_VISIBLE_START)
         .map((snapshot) => ({
           ts: new Date(`${snapshot.snapshot_date}T00:00:00`).getTime(),
           marketValue: Number(snapshot.total_market_value),
@@ -48,7 +61,6 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
 
   const latestSnapshot = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
   const incompleteCount = snapshots.filter((snapshot) => !snapshot.is_complete).length;
-  const inferredBaseline = snapshots.find((snapshot) => snapshot.is_inferred);
   const summaryCards = [
     { key: "1d", label: "1D Market Value Change" },
     { key: "1m", label: "1M Market Value Change" },
@@ -66,7 +78,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         <div>
           <h2 className="text-lg font-semibold">Portfolio Market Value History</h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Starts with an inferred cost-basis baseline, then uses stored EOD closes. This is market value change, not cash-flow adjusted performance.
+            Showing snapshots from January 1, 2026 forward. Uses stored EOD closes and shows market value change, not cash-flow adjusted performance.
           </p>
         </div>
         <button
@@ -95,7 +107,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
           <span>Latest snapshot: {latestSnapshot.snapshot_date}</span>
           <span>Priced positions: {latestSnapshot.priced_positions}</span>
           <span>Unpriced positions: {latestSnapshot.unpriced_positions}</span>
-          {inferredBaseline ? <span>Baseline: inferred from current cost basis</span> : null}
+          <span>Visible range: 2026-01-01 onward</span>
         </div>
       ) : null}
 
@@ -124,7 +136,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
                 tickFormatter={(value) => new Date(value as number).toLocaleDateString()}
                 minTickGap={16}
               />
-              <YAxis tickFormatter={(value) => fmtCurrency(Number(value))} width={88} />
+              <YAxis tickFormatter={(value) => fmtCompactCurrency(Number(value))} width={96} />
               <Tooltip
                 labelFormatter={(value) => new Date(value as number).toLocaleDateString()}
                 formatter={(value: number, name: string, item) => {
@@ -143,25 +155,10 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
                 dataKey="marketValue"
                 stroke="#0284c7"
                 strokeWidth={2}
-                dot={({ cx, cy, payload }) =>
-                  payload?.isInferred ? <circle cx={cx} cy={cy} r={4} fill="#0284c7" stroke="#fff" strokeWidth={1.5} /> : <circle cx={cx} cy={cy} r={0} />
-                }
+                dot={false}
                 activeDot={{ r: 5 }}
               />
               <Line type="monotone" dataKey="costBasis" stroke="#71717a" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
-              {chartData
-                .filter((point) => point.isInferred)
-                .map((point) => (
-                  <ReferenceDot
-                    key={`baseline-${point.ts}`}
-                    x={point.ts}
-                    y={point.marketValue}
-                    r={5}
-                    fill="#0284c7"
-                    stroke="#ffffff"
-                    label={{ value: "Baseline", position: "top", fill: "#0284c7", fontSize: 11 }}
-                  />
-                ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
