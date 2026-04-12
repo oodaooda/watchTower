@@ -322,6 +322,31 @@ export default function PortfolioPage() {
   const summary = portfolio?.summary;
   const positions = portfolio?.positions || [];
   const groups = portfolio?.groups || [];
+  const latestCompleteSnapshot = useMemo(
+    () =>
+      [...(snapshotHistory?.snapshots || [])]
+        .reverse()
+        .find(
+          (snapshot) =>
+            !snapshot.is_inferred &&
+            snapshot.is_complete &&
+            snapshot.total_market_value !== null &&
+            snapshot.total_market_value !== undefined,
+        ),
+    [snapshotHistory],
+  );
+  const marketValueCardSource =
+    summary?.total_market_value !== null && summary?.total_market_value !== undefined
+      ? "live"
+      : latestCompleteSnapshot
+        ? "eod"
+        : "none";
+  const displayedMarketValue =
+    summary?.total_market_value ?? latestCompleteSnapshot?.total_market_value ?? null;
+  const displayedGainLoss =
+    summary?.total_unrealized_gain_loss ?? latestCompleteSnapshot?.unrealized_gain_loss ?? null;
+  const displayedGainLossPct =
+    summary?.total_unrealized_gain_loss_pct ?? latestCompleteSnapshot?.unrealized_gain_loss_pct ?? null;
   const selectedLots = useMemo(
     () => positions.filter((position) => position.ticker === selectedTicker),
     [positions, selectedTicker],
@@ -379,11 +404,20 @@ export default function PortfolioPage() {
   const cards = useMemo(
     () => [
       { label: "Total Cost Basis", value: fmtCurrency(summary?.total_cost_basis) },
-      { label: "Market Value", value: fmtCurrency(summary?.total_market_value) },
-      { label: "Unrealized Gain/Loss", value: fmtCurrency(summary?.total_unrealized_gain_loss) },
-      { label: "Gain/Loss %", value: fmtPercent(summary?.total_unrealized_gain_loss_pct) },
+      {
+        label: marketValueCardSource === "eod" ? "Latest EOD Market Value" : "Market Value",
+        value: fmtCurrency(displayedMarketValue),
+      },
+      {
+        label: marketValueCardSource === "eod" ? "Latest EOD Gain/Loss" : "Unrealized Gain/Loss",
+        value: fmtCurrency(displayedGainLoss),
+      },
+      {
+        label: marketValueCardSource === "eod" ? "Latest EOD Gain/Loss %" : "Gain/Loss %",
+        value: fmtPercent(displayedGainLossPct),
+      },
     ],
-    [summary],
+    [displayedGainLoss, displayedGainLossPct, displayedMarketValue, marketValueCardSource, summary?.total_cost_basis],
   );
 
   return (
@@ -398,7 +432,14 @@ export default function PortfolioPage() {
             </p>
           </div>
         </div>
-        <button className={btnGhost} onClick={() => void loadPortfolio()} disabled={loading || saving}>
+        <button
+          className={btnGhost}
+          onClick={() => {
+            void loadPortfolio();
+            void loadSnapshots();
+          }}
+          disabled={loading || saving || snapshotLoading}
+        >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
@@ -435,6 +476,12 @@ export default function PortfolioPage() {
           </div>
         ))}
       </div>
+
+      {marketValueCardSource === "eod" && latestCompleteSnapshot ? (
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+          Live quotes are incomplete, so the summary cards are showing the latest complete EOD snapshot from {latestCompleteSnapshot.snapshot_date}.
+        </div>
+      ) : null}
 
       {showImportPanel ? (
         <div className={`${card} p-4 space-y-3`}>
