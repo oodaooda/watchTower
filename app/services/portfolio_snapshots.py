@@ -27,6 +27,7 @@ def create_or_update_portfolio_snapshot(
     db: Session,
     *,
     snapshot_date: Optional[date] = None,
+    source: str = "asset_price_daily",
 ) -> Optional[PortfolioSnapshotDaily]:
     positions = db.scalars(select(PortfolioPosition)).all()
     if not positions:
@@ -76,7 +77,7 @@ def create_or_update_portfolio_snapshot(
     snapshot.is_complete = is_complete
     snapshot.priced_positions = priced_positions
     snapshot.unpriced_positions = unpriced_positions
-    snapshot.source = "asset_price_daily"
+    snapshot.source = source
     db.commit()
     db.refresh(snapshot)
     return snapshot
@@ -118,6 +119,27 @@ def inferred_baseline_snapshot(
         "unpriced_positions": 0,
         "source": "initial_cost_basis_baseline",
         "is_inferred": True,
+    }
+
+
+def rebuild_portfolio_snapshots_from_dates(
+    db: Session,
+    snapshot_dates: List[date],
+    *,
+    source: str = "asset_price_daily_backfill",
+) -> Dict[str, object]:
+    created_or_updated = 0
+    latest_complete_snapshot_date: Optional[str] = None
+
+    for snapshot_date in snapshot_dates:
+        snapshot = create_or_update_portfolio_snapshot(db, snapshot_date=snapshot_date, source=source)
+        if snapshot:
+            created_or_updated += 1
+            latest_complete_snapshot_date = snapshot.snapshot_date.isoformat()
+
+    return {
+        "complete_snapshot_dates": created_or_updated,
+        "latest_complete_snapshot_date": latest_complete_snapshot_date,
     }
 
 

@@ -9,6 +9,7 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
 - Daily portfolio market value snapshots from the day tracking starts forward
 - One inferred initial baseline point from current portfolio cost basis
 - Totals-only snapshot storage
+- Optional historical snapshot rebuild from complete backfilled EOD dates using the current saved holdings definition
 - Snapshot history API with daily/monthly/yearly change summaries
 - Portfolio UI chart/cards for market value history
 - Scheduler integration after EOD asset price refresh
@@ -21,12 +22,14 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
 - Per-asset attribution snapshots
 - Time-weighted or money-weighted returns
 - Inferred daily closes between baseline and first real EOD snapshot
+- Transaction-aware historical holdings reconstruction
 
 ## Product Decisions
 
 - Snapshot timing should happen after EOD prices are refreshed.
 - Snapshot values use stored EOD closes, not live intraday quotes.
 - The chart may include one inferred initial cost-basis baseline point before the first real snapshot.
+- Historical snapshot rebuild is allowed only as a current-holdings-based reconstruction after price-history backfill.
 - Snapshots are trading-day based, using available EOD price dates.
 - Snapshot totals are recomputable/idempotent for the latest trading day.
 - UI labels should say `Portfolio Market Value` or `Market Value Change`, not `Performance`.
@@ -52,17 +55,21 @@ Recommended endpoints:
 
 - `GET /portfolio/snapshots`
 - `POST /portfolio/snapshots/run`
+- `POST /portfolio/prices/backfill`
 
 History response should include:
 
 - snapshot rows
 - `1d`, `1m`, `ytd`, and `1y` market value changes
+- inferred baseline vs real snapshot metadata
 
 ## Acceptance Shape
 
 V1 is successful when:
 
 - the scheduler can create a daily portfolio market value snapshot after EOD prices refresh
+- the system can backfill current portfolio holdings' price history from Alpha Vantage without aborting on a single symbol failure
+- the system can rebuild reconstructed snapshot rows from complete backfilled EOD dates
 - the endpoint returns snapshot history and period changes
 - the portfolio page shows a market value chart and change cards
 - all wording avoids implying true portfolio performance

@@ -320,6 +320,24 @@ class PortfolioSnapshotHistory(BaseModel):
     summary: Dict[str, Optional[PortfolioSnapshotChange]] = Field(default_factory=dict)
 
 
+class PortfolioPriceBackfillItem(BaseModel):
+    ticker: str
+    status: str
+    history_rows: int = 0
+    latest_price_date: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PortfolioPriceBackfillResult(BaseModel):
+    total_assets: int
+    attempted_assets: int
+    succeeded_assets: int
+    failed_assets: int
+    complete_snapshot_dates: int
+    latest_complete_snapshot_date: Optional[str] = None
+    items: List[PortfolioPriceBackfillItem] = Field(default_factory=list)
+
+
 # ---------- Modeling ----------
 class ModelingAssumptionOut(BaseModel):
     scenario: str

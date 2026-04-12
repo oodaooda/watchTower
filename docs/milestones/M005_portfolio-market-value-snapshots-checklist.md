@@ -22,11 +22,15 @@ This checklist covers forward-only portfolio market value history based on store
 - [x] Add snapshot history endpoint and manual run endpoint.
 - [x] Wire snapshot generation after daily EOD price refresh.
 - [x] Incomplete snapshots avoid partial overall market value/gain totals.
+- [x] Add portfolio price-history backfill endpoint with per-symbol error handling.
+- [x] Add reconstructed snapshot rebuild from complete backfilled EOD dates.
 
 **Phase 2 Tests**
 - [x] Unit: snapshot generation calculates totals from EOD closes.
 - [x] Unit: missing prices mark snapshots incomplete without zeroing values.
 - [x] Integration: snapshot endpoint returns rows and period summaries.
+- [x] Integration: portfolio backfill continues past single-symbol failures.
+- [x] Integration: portfolio backfill rebuilds complete snapshot history from backfilled prices.
 
 **Commit / Push Gate**
 - [x] Backend tests pass.

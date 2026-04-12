@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,8 @@ from app.core.schemas import (
     PortfolioPositionItem,
     PortfolioTickerGroupItem,
     PortfolioPositionUpdate,
+    PortfolioPriceBackfillItem,
+    PortfolioPriceBackfillResult,
     PortfolioSnapshotHistory,
     PortfolioSnapshotItem,
     PortfolioSummary,
@@ -24,12 +27,19 @@ from app.services.portfolio_snapshots import (
     create_or_update_portfolio_snapshot,
     inferred_baseline_snapshot,
     load_portfolio_snapshots,
+    rebuild_portfolio_snapshots_from_dates,
     snapshot_history_summary,
 )
 from app.services.assets import find_or_create_asset, normalize_symbol, resolve_asset
+from app.services.price_history import backfill_portfolio_daily_history, complete_portfolio_price_dates
 from app.services.quotes import fetch_alpha_quotes, resolve_current_quote
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+
+
+class PortfolioPriceBackfillRequest(BaseModel):
+    force_refresh: bool = True
+    sleep_seconds: float = Field(default=12.0, ge=0.0, le=60.0)
 
 
 def _serialize_snapshot_history(db: Session) -> PortfolioSnapshotHistory:
@@ -223,6 +233,37 @@ def get_portfolio_snapshots(db: Session = Depends(get_db)):
 def run_portfolio_snapshot(db: Session = Depends(get_db)):
     create_or_update_portfolio_snapshot(db)
     return _serialize_snapshot_history(db)
+
+
+@router.post("/prices/backfill", response_model=PortfolioPriceBackfillResult)
+def backfill_portfolio_prices(payload: PortfolioPriceBackfillRequest, db: Session = Depends(get_db)):
+    result = backfill_portfolio_daily_history(
+        db,
+        force_refresh=payload.force_refresh,
+        sleep_seconds=payload.sleep_seconds,
+    )
+    snapshot_result = rebuild_portfolio_snapshots_from_dates(
+        db,
+        complete_portfolio_price_dates(db),
+    )
+    return PortfolioPriceBackfillResult(
+        total_assets=int(result["total_assets"]),
+        attempted_assets=int(result["attempted_assets"]),
+        succeeded_assets=int(result["succeeded_assets"]),
+        failed_assets=int(result["failed_assets"]),
+        complete_snapshot_dates=int(snapshot_result["complete_snapshot_dates"]),
+        latest_complete_snapshot_date=snapshot_result["latest_complete_snapshot_date"],
+        items=[
+            PortfolioPriceBackfillItem(
+                ticker=str(item["ticker"]),
+                status=str(item["status"]),
+                history_rows=int(item["history_rows"]),
+                latest_price_date=item["latest_price_date"],
+                error=item["error"],
+            )
+            for item in result["items"]
+        ],
+    )
 
 
 @router.post("", response_model=PortfolioOverview)
