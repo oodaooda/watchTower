@@ -15,6 +15,8 @@ from app.core.models import AssetPriceDaily, Company, PortfolioPosition
 
 ALPHA_ENDPOINT = "https://www.alphavantage.co/query"
 EOD_STALE_AFTER_DAYS = 2
+DEFAULT_ALPHA_DAILY_SLEEP_SECONDS = 12.0
+ALPHA_RATE_LIMIT_RETRY_SECONDS = 15.0
 
 
 def fetch_alpha_daily_adjusted(symbol: str, api_key: str) -> List[Tuple[date, float]]:
@@ -126,12 +128,22 @@ def sync_tracked_assets_daily_history(db: Session) -> int:
     ).all()
 
     synced = 0
-    for asset in assets:
+    for idx, asset in enumerate(assets):
         try:
             ensure_daily_history(db, asset)
             synced += 1
-        except HTTPException:
-            continue
+        except HTTPException as exc:
+            if exc.status_code == 429:
+                time.sleep(ALPHA_RATE_LIMIT_RETRY_SECONDS)
+                try:
+                    ensure_daily_history(db, asset, force_refresh=True)
+                    synced += 1
+                except HTTPException:
+                    pass
+            else:
+                continue
+        if idx < len(assets) - 1:
+            time.sleep(DEFAULT_ALPHA_DAILY_SLEEP_SECONDS)
     return synced
 
 

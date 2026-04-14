@@ -51,6 +51,11 @@ def test_portfolio_math_calculates_market_value_and_gain(monkeypatch):
         assert overview.summary.total_market_value == 4250.0
         assert overview.summary.total_unrealized_gain_loss == 750.0
         assert overview.summary.total_unrealized_gain_loss_pct == 750.0 / 3500.0
+        assert overview.summary.live_total_market_value == 4250.0
+        assert overview.summary.live_total_unrealized_gain_loss == 750.0
+        assert overview.summary.live_total_is_complete is True
+        assert overview.summary.live_priced_positions == 2
+        assert overview.summary.live_live_positions == 2
         assert overview.summary.has_unpriced_positions is False
         assert len(overview.positions) == 2
         assert len(overview.groups) == 2
@@ -76,10 +81,53 @@ def test_portfolio_summary_is_explicit_when_quote_is_missing(monkeypatch):
         assert overview.summary.total_market_value is None
         assert overview.summary.total_unrealized_gain_loss is None
         assert overview.summary.total_unrealized_gain_loss_pct is None
+        assert overview.summary.live_total_market_value is None
+        assert overview.summary.live_total_unrealized_gain_loss is None
+        assert overview.summary.live_total_is_complete is False
+        assert overview.summary.live_priced_positions == 0
+        assert overview.summary.live_unavailable_positions == 1
         assert overview.summary.has_unpriced_positions is True
         assert overview.summary.unpriced_positions == 1
         assert overview.positions[0].price_status == "unavailable"
         assert overview.positions[0].market_value is None
+
+
+def test_portfolio_live_totals_remain_available_when_only_some_quotes_resolve(monkeypatch):
+    SessionLocal = _session_local()
+
+    with SessionLocal() as db:
+        aapl = Company(ticker="AAPL", name="Apple Inc.", asset_type="equity")
+        schp = Company(ticker="SCHP", name="SCHP ETF", asset_type="etf")
+        db.add_all([aapl, schp])
+        db.commit()
+        db.refresh(aapl)
+        db.refresh(schp)
+        db.add_all(
+            [
+                PortfolioPosition(company_id=aapl.id, quantity=10, avg_cost_basis=150),
+                PortfolioPosition(company_id=schp.id, quantity=5, avg_cost_basis=20),
+            ]
+        )
+        db.commit()
+        positions = db.query(PortfolioPosition).order_by(PortfolioPosition.id.asc()).all()
+
+        monkeypatch.setattr(
+            "app.routers.portfolio.fetch_alpha_quotes",
+            lambda tickers: {
+                "AAPL": {"price": 200.0, "source": "alpha_vantage", "status": "live"},
+                "SCHP": {"price": None, "source": "alpha_vantage", "status": "unavailable"},
+            },
+        )
+
+        overview = _serialize_portfolio_positions(db, positions)
+        assert overview.summary.total_market_value is None
+        assert overview.summary.live_total_market_value == 2000.0
+        assert overview.summary.live_total_unrealized_gain_loss == 400.0
+        assert overview.summary.live_total_is_complete is False
+        assert overview.summary.live_priced_positions == 1
+        assert overview.summary.live_unpriced_positions == 1
+        assert overview.summary.live_live_positions == 1
+        assert overview.summary.live_unavailable_positions == 1
 
 
 def test_portfolio_groups_aggregate_duplicate_lots(monkeypatch):

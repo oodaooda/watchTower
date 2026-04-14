@@ -270,6 +270,16 @@ class PortfolioSummary(BaseModel):
     total_market_value: Optional[float] = None
     total_unrealized_gain_loss: Optional[float] = None
     total_unrealized_gain_loss_pct: Optional[float] = None
+    live_total_market_value: Optional[float] = None
+    live_total_unrealized_gain_loss: Optional[float] = None
+    live_total_unrealized_gain_loss_pct: Optional[float] = None
+    live_total_is_complete: bool = False
+    live_coverage_pct: Optional[float] = None
+    live_priced_positions: int = 0
+    live_unpriced_positions: int = 0
+    live_live_positions: int = 0
+    live_cached_positions: int = 0
+    live_unavailable_positions: int = 0
     has_unpriced_positions: bool = False
     priced_positions: int = 0
     unpriced_positions: int = 0

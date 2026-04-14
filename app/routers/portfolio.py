@@ -140,6 +140,9 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
     quote_map = fetch_alpha_quotes(position.company.ticker for position in positions if position.company)
     items: List[PortfolioPositionItem] = []
     has_unpriced_positions = False
+    live_live_positions = 0
+    live_cached_positions = 0
+    live_unavailable_positions = 0
 
     for position in positions:
         asset = position.company
@@ -155,6 +158,13 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
         gain_pct = (gain / total_cost_basis) if (gain is not None and total_cost_basis not in (0, None)) else None
         if market_value is None:
             has_unpriced_positions = True
+        status = str(quote.get("status") or "unavailable")
+        if status == "live":
+            live_live_positions += 1
+        elif status == "cached":
+            live_cached_positions += 1
+        else:
+            live_unavailable_positions += 1
         items.append(
             PortfolioPositionItem(
                 position_id=position.id,
@@ -171,7 +181,7 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
                 unrealized_gain_loss=gain,
                 unrealized_gain_loss_pct=gain_pct,
                 portfolio_weight=None,
-                price_status=str(quote.get("status") or "unavailable"),
+                price_status=status,
                 price_source=quote.get("source"),
                 entry_source=_normalize_entry_source(getattr(position, "entry_source", None)),
                 notes=position.notes,
@@ -180,8 +190,17 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
 
     groups = _group_portfolio_items(items)
     total_cost_basis = sum(item.total_cost_basis for item in items)
+    live_priced_positions = sum(1 for item in items if item.market_value is not None)
+    live_unpriced_positions = sum(1 for item in items if item.market_value is None)
+    live_total_market_value = sum(item.market_value or 0.0 for item in items if item.market_value is not None)
+    if live_priced_positions == 0:
+        live_total_market_value = None
     total_market_value = None if has_unpriced_positions else sum(item.market_value or 0.0 for item in items)
+    live_total_gain = None if live_total_market_value is None else live_total_market_value - total_cost_basis
     total_gain = None if total_market_value is None else total_market_value - total_cost_basis
+    live_total_gain_pct = None
+    if live_total_gain is not None and total_cost_basis > 0:
+        live_total_gain_pct = live_total_gain / total_cost_basis
     total_gain_pct = None
     if total_gain is not None and total_cost_basis > 0:
         total_gain_pct = total_gain / total_cost_basis
@@ -200,9 +219,19 @@ def _serialize_portfolio_positions(db: Session, positions: List[PortfolioPositio
             total_market_value=total_market_value,
             total_unrealized_gain_loss=total_gain,
             total_unrealized_gain_loss_pct=total_gain_pct,
+            live_total_market_value=live_total_market_value,
+            live_total_unrealized_gain_loss=live_total_gain,
+            live_total_unrealized_gain_loss_pct=live_total_gain_pct,
+            live_total_is_complete=not has_unpriced_positions,
+            live_coverage_pct=(live_priced_positions / len(items)) if items else None,
+            live_priced_positions=live_priced_positions,
+            live_unpriced_positions=live_unpriced_positions,
+            live_live_positions=live_live_positions,
+            live_cached_positions=live_cached_positions,
+            live_unavailable_positions=live_unavailable_positions,
             has_unpriced_positions=has_unpriced_positions,
-            priced_positions=sum(1 for item in items if item.market_value is not None),
-            unpriced_positions=sum(1 for item in items if item.market_value is None),
+            priced_positions=live_priced_positions,
+            unpriced_positions=live_unpriced_positions,
             total_positions=len(items),
             grouped_assets=len(groups),
         ),

@@ -239,6 +239,26 @@ def _is_portfolio_list_question(question: str) -> bool:
     return any(prompt in q for prompt in prompts)
 
 
+def _is_full_portfolio_request(question: str) -> bool:
+    q = f" {_normalized_question_text(question)} "
+    markers = (
+        " full portfolio ",
+        " complete portfolio ",
+        " all holdings ",
+        " all positions ",
+        " every holding ",
+        " every position ",
+        " entire portfolio ",
+        " list all holdings ",
+        " show all holdings ",
+        " show every holding ",
+        " show every position ",
+        " show complete portfolio ",
+        " show full portfolio ",
+    )
+    return any(marker in q for marker in markers)
+
+
 def _is_portfolio_gain_question(question: str) -> bool:
     q = f" {_normalized_question_text(question)} "
     markers = (
@@ -313,6 +333,13 @@ def _build_portfolio_answer(
 
     analytics = _portfolio_summary_data(groups)
     q = (question or "").strip().lower()
+    is_full_request = _is_full_portfolio_request(question)
+
+    def _live_coverage_note(summary_data: Dict[str, Any]) -> str:
+        return (
+            f"{int(summary_data.get('live_priced_positions') or 0)}/"
+            f"{int(summary_data.get('total_positions') or 0)} positions priced"
+        )
 
     if _is_portfolio_group_compare_question(question):
         grouped: Dict[str, List[Dict[str, Any]]] = {"etf": [], "equity": []}
@@ -400,6 +427,10 @@ def _build_portfolio_answer(
             return "\n".join(lines)
 
     if _is_portfolio_list_question(question) or "portfolio" in q:
+        live_total_market_value = summary.get("live_total_market_value")
+        live_total_gain = summary.get("live_total_unrealized_gain_loss")
+        live_total_gain_pct = summary.get("live_total_unrealized_gain_loss_pct")
+        is_live_complete = bool(summary.get("live_total_is_complete"))
         lines = [
             f"Portfolio summary: cost basis {summary.get('total_cost_basis', 0.0):,.2f}, "
             + (
@@ -407,16 +438,23 @@ def _build_portfolio_answer(
                 f"unrealized gain/loss {summary.get('total_unrealized_gain_loss', 0.0):,.2f}."
                 if summary.get("total_market_value") is not None
                 else (
-                    f"latest complete EOD market value {latest_complete_snapshot.get('total_market_value', 0.0):,.2f}, "
-                    f"latest complete EOD gain/loss {latest_complete_snapshot.get('unrealized_gain_loss', 0.0):,.2f} "
-                    f"as of {latest_complete_snapshot.get('snapshot_date')}."
-                    if latest_complete_snapshot and latest_complete_snapshot.get("total_market_value") is not None
-                    else "market value is incomplete because one or more positions do not have a usable quote."
+                    (
+                        f"live market value {live_total_market_value:,.2f} ({_live_coverage_note(summary)}), "
+                        f"live gain/loss {live_total_gain:,.2f}"
+                        + (
+                            f" ({((live_total_gain_pct or 0.0) * 100):.2f}%)."
+                            if live_total_gain_pct is not None
+                            else "."
+                        )
+                        if live_total_market_value is not None
+                        else "market value is incomplete because no positions currently have a usable quote."
+                    )
                 )
             ),
             "Grouped holdings:",
         ]
-        for position in groups[:10]:
+        display_groups = groups if is_full_request else groups[:10]
+        for position in display_groups:
             gain = position.get("unrealized_gain_loss")
             gain_pct = position.get("unrealized_gain_loss_pct")
             gain_text = "quote unavailable"
@@ -429,13 +467,22 @@ def _build_portfolio_answer(
                 f"{(position.get('weighted_avg_cost_basis') or position.get('avg_cost_basis') or 0.0):,.2f}, "
                 f"current price {(position.get('current_price') or 0.0):,.2f}, {gain_text}."
             )
-        extra = len(groups) - min(len(groups), 10)
+        extra = len(groups) - len(display_groups)
         if extra > 0:
             lines.append(f"- {extra} additional grouped holding(s) omitted for brevity.")
-        if summary.get("has_unpriced_positions") and latest_complete_snapshot:
+        if not is_live_complete:
             lines.append(
-                f"- Live quote totals are incomplete, so the market value summary is using the latest complete EOD snapshot from {latest_complete_snapshot.get('snapshot_date')}."
+                f"- Live quote coverage is {_live_coverage_note(summary)}"
+                + (
+                    f" ({int(summary.get('live_live_positions') or 0)} live, {int(summary.get('live_cached_positions') or 0)} cached, {int(summary.get('live_unavailable_positions') or 0)} unavailable)."
+                )
             )
+            if latest_complete_snapshot and latest_complete_snapshot.get("total_market_value") is not None:
+                lines.append(
+                    f"- Latest complete EOD portfolio value was {latest_complete_snapshot.get('total_market_value', 0.0):,.2f} "
+                    f"with gain/loss {latest_complete_snapshot.get('unrealized_gain_loss', 0.0):,.2f} "
+                    f"as of {latest_complete_snapshot.get('snapshot_date')}."
+                )
         return "\n".join(lines)
 
     return ""

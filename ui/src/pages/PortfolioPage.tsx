@@ -336,17 +336,17 @@ export default function PortfolioPage() {
     [snapshotHistory],
   );
   const marketValueCardSource =
-    summary?.total_market_value !== null && summary?.total_market_value !== undefined
+    summary?.live_total_market_value !== null && summary?.live_total_market_value !== undefined
       ? "live"
       : latestCompleteSnapshot
         ? "eod"
         : "none";
   const displayedMarketValue =
-    summary?.total_market_value ?? latestCompleteSnapshot?.total_market_value ?? null;
+    summary?.live_total_market_value ?? latestCompleteSnapshot?.total_market_value ?? null;
   const displayedGainLoss =
-    summary?.total_unrealized_gain_loss ?? latestCompleteSnapshot?.unrealized_gain_loss ?? null;
+    summary?.live_total_unrealized_gain_loss ?? latestCompleteSnapshot?.unrealized_gain_loss ?? null;
   const displayedGainLossPct =
-    summary?.total_unrealized_gain_loss_pct ?? latestCompleteSnapshot?.unrealized_gain_loss_pct ?? null;
+    summary?.live_total_unrealized_gain_loss_pct ?? latestCompleteSnapshot?.unrealized_gain_loss_pct ?? null;
   const selectedLots = useMemo(
     () => positions.filter((position) => position.ticker === selectedTicker),
     [positions, selectedTicker],
@@ -405,19 +405,41 @@ export default function PortfolioPage() {
     () => [
       { label: "Total Cost Basis", value: fmtCurrency(summary?.total_cost_basis) },
       {
-        label: marketValueCardSource === "eod" ? "Latest EOD Market Value" : "Market Value",
+        label:
+          marketValueCardSource === "eod"
+            ? "Latest EOD Market Value"
+            : summary?.live_total_is_complete
+              ? "Live Portfolio Value"
+              : "Live Portfolio Value (Partial)",
         value: fmtCurrency(displayedMarketValue),
       },
       {
-        label: marketValueCardSource === "eod" ? "Latest EOD Gain/Loss" : "Unrealized Gain/Loss",
+        label:
+          marketValueCardSource === "eod"
+            ? "Latest EOD Gain/Loss"
+            : summary?.live_total_is_complete
+              ? "Live Gain/Loss"
+              : "Live Gain/Loss (Partial)",
         value: fmtCurrency(displayedGainLoss),
       },
       {
-        label: marketValueCardSource === "eod" ? "Latest EOD Gain/Loss %" : "Gain/Loss %",
+        label:
+          marketValueCardSource === "eod"
+            ? "Latest EOD Gain/Loss %"
+            : summary?.live_total_is_complete
+              ? "Live Gain/Loss %"
+              : "Live Gain/Loss % (Partial)",
         value: fmtPercent(displayedGainLossPct),
       },
     ],
-    [displayedGainLoss, displayedGainLossPct, displayedMarketValue, marketValueCardSource, summary?.total_cost_basis],
+    [
+      displayedGainLoss,
+      displayedGainLossPct,
+      displayedMarketValue,
+      marketValueCardSource,
+      summary?.live_total_is_complete,
+      summary?.total_cost_basis,
+    ],
   );
 
   return (
@@ -476,6 +498,15 @@ export default function PortfolioPage() {
           </div>
         ))}
       </div>
+
+      {marketValueCardSource === "live" && summary && !summary.live_total_is_complete ? (
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+          Live totals are partial: {summary.live_priced_positions}/{summary.total_positions} positions priced ({summary.live_live_positions} live, {summary.live_cached_positions} cached, {summary.live_unavailable_positions} unavailable).
+          {latestCompleteSnapshot
+            ? ` Latest complete EOD snapshot was ${latestCompleteSnapshot.snapshot_date}.`
+            : ""}
+        </div>
+      ) : null}
 
       {marketValueCardSource === "eod" && latestCompleteSnapshot ? (
         <div className="text-xs text-zinc-500 dark:text-zinc-400">

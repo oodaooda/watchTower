@@ -1009,9 +1009,48 @@ def test_answer_question_portfolio_summary_falls_back_to_latest_complete_eod_sna
         })
 
         response = _answer_question("what is the market value in the portfolio?", db=db)
-        assert "latest complete EOD market value 2,400.00" in response.answer
+        assert "live market value 2,000.00 (1/2 positions priced)" in response.answer
+        assert "Latest complete EOD portfolio value was 2,400.00" in response.answer
         assert "as of 2026-04-10" in response.answer
         assert "portfolio_snapshots_daily" in response.citations
+
+
+def test_answer_question_full_portfolio_request_returns_all_grouped_holdings(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        companies = []
+        for idx in range(12):
+            company = Company(ticker=f"T{idx:03d}"[-4:], name=f"Company {idx}", asset_type="equity")
+            companies.append(company)
+        db.add_all(companies)
+        db.commit()
+        for company in companies:
+            db.refresh(company)
+        db.add_all(
+            [PortfolioPosition(company_id=company.id, quantity=1, avg_cost_basis=100 + idx) for idx, company in enumerate(companies)]
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            "app.routers.portfolio.fetch_alpha_quotes",
+            lambda tickers: {
+                company.ticker: {"price": 150.0 + idx, "source": "alpha_vantage", "status": "live"}
+                for idx, company in enumerate(companies)
+            },
+        )
+
+        response = _answer_question("show my full portfolio", db=db)
+        assert "Grouped holdings:" in response.answer
+        assert "additional grouped holding(s) omitted for brevity" not in response.answer
+        assert response.answer.count(" lot)") + response.answer.count(" lots)") >= 12
 
 
 def test_answer_question_portfolio_gain_for_explicit_symbol(monkeypatch):

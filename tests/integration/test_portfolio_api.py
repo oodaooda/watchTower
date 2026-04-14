@@ -116,8 +116,42 @@ def test_portfolio_overview_reports_unpriced_positions(monkeypatch):
     body = create.json()
     assert body["summary"]["total_cost_basis"] == 2000.0
     assert body["summary"]["total_market_value"] is None
+    assert body["summary"]["live_total_market_value"] is None
     assert body["summary"]["has_unpriced_positions"] is True
     assert body["positions"][0]["price_status"] == "unavailable"
+
+
+def test_portfolio_overview_returns_partial_live_totals(monkeypatch):
+    client, SessionLocal = _build_test_client()
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Company(ticker="AAPL", name="Apple Inc.", asset_type="equity"),
+                Company(ticker="SCHP", name="SCHP ETF", asset_type="etf"),
+            ]
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        portfolio_router,
+        "fetch_alpha_quotes",
+        lambda tickers: {
+            "AAPL": {"price": 200.0, "source": "alpha_vantage", "status": "live"},
+            "SCHP": {"price": None, "source": "alpha_vantage", "status": "unavailable"},
+        },
+    )
+
+    assert client.post("/portfolio", json={"ticker": "AAPL", "quantity": 10, "avg_cost_basis": 150}).status_code == 200
+    response = client.post("/portfolio", json={"ticker": "SCHP", "quantity": 5, "avg_cost_basis": 20})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["total_market_value"] is None
+    assert body["summary"]["live_total_market_value"] == 2000.0
+    assert body["summary"]["live_total_unrealized_gain_loss"] == 400.0
+    assert body["summary"]["live_total_is_complete"] is False
+    assert body["summary"]["live_priced_positions"] == 1
+    assert body["summary"]["live_unpriced_positions"] == 1
 
 
 def test_replace_import_replaces_existing_portfolio(monkeypatch):

@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.models import Company, PriceAnnual
 from app.services.assets import normalize_symbol
 
-QUOTE_TTL = 30
+QUOTE_TTL = 60
 _QUOTE_CACHE: Dict[str, tuple[float, Dict[str, float | None | str]]] = {}
 
 

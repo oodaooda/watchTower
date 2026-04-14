@@ -411,6 +411,16 @@ export type PortfolioSummaryOut = {
   total_market_value?: number | null;
   total_unrealized_gain_loss?: number | null;
   total_unrealized_gain_loss_pct?: number | null;
+  live_total_market_value?: number | null;
+  live_total_unrealized_gain_loss?: number | null;
+  live_total_unrealized_gain_loss_pct?: number | null;
+  live_total_is_complete: boolean;
+  live_coverage_pct?: number | null;
+  live_priced_positions: number;
+  live_unpriced_positions: number;
+  live_live_positions: number;
+  live_cached_positions: number;
+  live_unavailable_positions: number;
   has_unpriced_positions: boolean;
   priced_positions: number;
   unpriced_positions: number;
