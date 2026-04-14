@@ -1,3 +1,5 @@
+from datetime import date
+
 from app.routers.qa import (
     _extract_ticker,
     _extract_tickers,
@@ -28,7 +30,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.core.db import Base
-from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment, FavoriteCompany, PortfolioPosition
+from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment, FavoriteCompany, PortfolioPosition, PortfolioSnapshotDaily
 
 
 def test_extract_ticker_skips_common_words():
@@ -963,6 +965,53 @@ def test_answer_question_portfolio_summary_returns_mixed_holdings(monkeypatch):
         assert response.data["plan"]["use_portfolio"] is True
         assert response.data["plan"]["portfolio_total_positions"] == 2
         assert "portfolio_positions" in response.citations
+
+
+def test_answer_question_portfolio_summary_falls_back_to_latest_complete_eod_snapshot(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        aapl = Company(ticker="AAPL", name="Apple Inc.", asset_type="equity")
+        voog = Company(ticker="VOOG", name="VOOG ETF", asset_type="etf")
+        db.add_all([aapl, voog])
+        db.commit()
+        db.refresh(aapl)
+        db.refresh(voog)
+        db.add_all(
+            [
+                PortfolioPosition(company_id=aapl.id, quantity=10, avg_cost_basis=150),
+                PortfolioPosition(company_id=voog.id, quantity=2, avg_cost_basis=300),
+                PortfolioSnapshotDaily(
+                    snapshot_date=date(2026, 4, 10),
+                    total_cost_basis=2100.0,
+                    total_market_value=2400.0,
+                    unrealized_gain_loss=300.0,
+                    unrealized_gain_loss_pct=300.0 / 2100.0,
+                    is_complete=True,
+                    priced_positions=2,
+                    unpriced_positions=0,
+                    source="asset_price_daily_backfill",
+                ),
+            ]
+        )
+        db.commit()
+
+        monkeypatch.setattr("app.routers.portfolio.fetch_alpha_quotes", lambda tickers: {
+            "AAPL": {"price": 200.0, "source": "alpha_vantage", "status": "live"},
+            "VOOG": {"price": None, "source": "alpha_vantage", "status": "unavailable"},
+        })
+
+        response = _answer_question("what is the market value in the portfolio?", db=db)
+        assert "latest complete EOD market value 2,400.00" in response.answer
+        assert "as of 2026-04-10" in response.answer
+        assert "portfolio_snapshots_daily" in response.citations
 
 
 def test_answer_question_portfolio_gain_for_explicit_symbol(monkeypatch):

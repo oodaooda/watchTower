@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.routers.portfolio import _load_positions as _load_portfolio_positions
 from app.routers.portfolio import _serialize_portfolio_positions
 from app.routers.prices import _get_company_news
+from app.services.portfolio_snapshots import load_portfolio_snapshots
 
 try:
     from openai import OpenAI
@@ -278,11 +279,27 @@ def _portfolio_summary_data(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _latest_complete_portfolio_snapshot(db: Session) -> Optional[Dict[str, Any]]:
+    snapshots = load_portfolio_snapshots(db)
+    for row in reversed(snapshots):
+        if bool(row.is_complete) and row.total_market_value is not None:
+            return {
+                "snapshot_date": row.snapshot_date.isoformat(),
+                "total_cost_basis": float(row.total_cost_basis),
+                "total_market_value": float(row.total_market_value),
+                "unrealized_gain_loss": float(row.unrealized_gain_loss) if row.unrealized_gain_loss is not None else None,
+                "unrealized_gain_loss_pct": float(row.unrealized_gain_loss_pct) if row.unrealized_gain_loss_pct is not None else None,
+                "source": row.source or "asset_price_daily",
+            }
+    return None
+
+
 def _build_portfolio_answer(
     question: str,
     overview: Dict[str, Any],
     *,
     requested_tickers: List[str],
+    latest_complete_snapshot: Optional[Dict[str, Any]] = None,
 ) -> str:
     positions = list(overview.get("positions") or [])
     groups = list(overview.get("groups") or positions)
@@ -325,7 +342,12 @@ def _build_portfolio_answer(
                 f"- {position.get('ticker')}: {((weight or 0.0) * 100):.2f}% weight at market value {(position.get('market_value') or 0.0):,.2f}"
             )
         if summary.get("has_unpriced_positions"):
-            lines.append("- Allocation is incomplete because one or more positions do not have a usable quote.")
+            if latest_complete_snapshot:
+                lines.append(
+                    f"- Live quote totals are incomplete. Latest complete EOD portfolio snapshot was {latest_complete_snapshot.get('snapshot_date')}."
+                )
+            else:
+                lines.append("- Allocation is incomplete because one or more positions do not have a usable quote.")
         return "\n".join(lines)
 
     if _is_portfolio_gain_question(question):
@@ -346,18 +368,35 @@ def _build_portfolio_answer(
         if gainers:
             best = gainers[0]
             worst = gainers[-1]
+            if summary.get("total_unrealized_gain_loss") is not None:
+                headline = (
+                    f"Portfolio unrealized gain/loss is {summary.get('total_unrealized_gain_loss', 0.0):,.2f}"
+                    + (
+                        f" ({((summary.get('total_unrealized_gain_loss_pct') or 0.0) * 100):.2f}%)."
+                        if summary.get("total_unrealized_gain_loss_pct") is not None
+                        else "."
+                    )
+                )
+            elif latest_complete_snapshot and latest_complete_snapshot.get("unrealized_gain_loss") is not None:
+                headline = (
+                    f"Latest complete EOD portfolio gain/loss was {latest_complete_snapshot.get('unrealized_gain_loss', 0.0):,.2f}"
+                    f" ({((latest_complete_snapshot.get('unrealized_gain_loss_pct') or 0.0) * 100):.2f}%)"
+                    f" as of {latest_complete_snapshot.get('snapshot_date')}."
+                )
+            else:
+                headline = "Portfolio unrealized gain/loss is currently incomplete because one or more positions do not have a usable quote."
             lines = [
-                f"Portfolio unrealized gain/loss is {summary.get('total_unrealized_gain_loss', 0.0):,.2f}"
-                + (
-                    f" ({((summary.get('total_unrealized_gain_loss_pct') or 0.0) * 100):.2f}%)."
-                    if summary.get("total_unrealized_gain_loss_pct") is not None
-                    else "."
-                ),
+                headline,
                 f"- Biggest winner: {best.get('ticker')} at {(best.get('unrealized_gain_loss') or 0.0):,.2f}.",
                 f"- Biggest laggard: {worst.get('ticker')} at {(worst.get('unrealized_gain_loss') or 0.0):,.2f}.",
             ]
             if summary.get("has_unpriced_positions"):
-                lines.append("- One or more positions are missing quotes, so totals are incomplete.")
+                if latest_complete_snapshot:
+                    lines.append(
+                        f"- Live quote totals are incomplete, so the summary is using the latest complete EOD snapshot from {latest_complete_snapshot.get('snapshot_date')}."
+                    )
+                else:
+                    lines.append("- One or more positions are missing quotes, so totals are incomplete.")
             return "\n".join(lines)
 
     if _is_portfolio_list_question(question) or "portfolio" in q:
@@ -367,7 +406,13 @@ def _build_portfolio_answer(
                 f"market value {summary.get('total_market_value', 0.0):,.2f}, "
                 f"unrealized gain/loss {summary.get('total_unrealized_gain_loss', 0.0):,.2f}."
                 if summary.get("total_market_value") is not None
-                else "market value is incomplete because one or more positions do not have a usable quote."
+                else (
+                    f"latest complete EOD market value {latest_complete_snapshot.get('total_market_value', 0.0):,.2f}, "
+                    f"latest complete EOD gain/loss {latest_complete_snapshot.get('unrealized_gain_loss', 0.0):,.2f} "
+                    f"as of {latest_complete_snapshot.get('snapshot_date')}."
+                    if latest_complete_snapshot and latest_complete_snapshot.get("total_market_value") is not None
+                    else "market value is incomplete because one or more positions do not have a usable quote."
+                )
             ),
             "Grouped holdings:",
         ]
@@ -387,6 +432,10 @@ def _build_portfolio_answer(
         extra = len(groups) - min(len(groups), 10)
         if extra > 0:
             lines.append(f"- {extra} additional grouped holding(s) omitted for brevity.")
+        if summary.get("has_unpriced_positions") and latest_complete_snapshot:
+            lines.append(
+                f"- Live quote totals are incomplete, so the market value summary is using the latest complete EOD snapshot from {latest_complete_snapshot.get('snapshot_date')}."
+            )
         return "\n".join(lines)
 
     return ""
@@ -2367,6 +2416,7 @@ def _answer_question(
                 ],
             )
         portfolio_overview = _serialize_portfolio_positions(db, portfolio_positions).model_dump()
+        latest_complete_snapshot = _latest_complete_portfolio_snapshot(db)
         requested_tickers = [company.ticker for company in companies] or [
             ticker for ticker in plan.get("companies", []) if isinstance(ticker, str)
         ]
@@ -2374,11 +2424,14 @@ def _answer_question(
             question,
             portfolio_overview,
             requested_tickers=requested_tickers,
+            latest_complete_snapshot=latest_complete_snapshot,
         )
         if direct_portfolio_answer:
             citations = {"portfolio_positions", "companies"}
             if portfolio_overview.get("summary", {}).get("has_unpriced_positions"):
                 citations.add("prices_annual")
+            if latest_complete_snapshot:
+                citations.add("portfolio_snapshots_daily")
             return QAResponse(
                 answer=direct_portfolio_answer,
                 citations=sorted(citations),
