@@ -57,6 +57,28 @@ function assetTypeLabel(value?: string | null) {
   return "Equity";
 }
 
+function nyMarketSessionState(now: Date): "open" | "closed" {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(now)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  ) as { weekday?: string; hour?: string; minute?: string };
+  const weekday = parts.weekday || "";
+  if (weekday === "Sat" || weekday === "Sun") return "closed";
+  const hour = Number(parts.hour || "0");
+  const minute = Number(parts.minute || "0");
+  const minutesSinceMidnight = hour * 60 + minute;
+  return minutesSinceMidnight >= 9 * 60 + 30 && minutesSinceMidnight < 16 * 60 ? "open" : "closed";
+}
+
 type ParsedImportRow = {
   ticker: string;
   quantity: number;
@@ -335,18 +357,28 @@ export default function PortfolioPage() {
         ),
     [snapshotHistory],
   );
+  const marketSession = useMemo(() => nyMarketSessionState(new Date()), []);
+  const shouldPreferLiveTotals = marketSession === "open";
   const marketValueCardSource =
-    summary?.live_total_market_value !== null && summary?.live_total_market_value !== undefined
+    shouldPreferLiveTotals &&
+    summary?.live_total_market_value !== null &&
+    summary?.live_total_market_value !== undefined
       ? "live"
       : latestCompleteSnapshot
         ? "eod"
         : "none";
   const displayedMarketValue =
-    summary?.live_total_market_value ?? latestCompleteSnapshot?.total_market_value ?? null;
+    marketValueCardSource === "live"
+      ? summary?.live_total_market_value ?? latestCompleteSnapshot?.total_market_value ?? null
+      : latestCompleteSnapshot?.total_market_value ?? summary?.live_total_market_value ?? null;
   const displayedGainLoss =
-    summary?.live_total_unrealized_gain_loss ?? latestCompleteSnapshot?.unrealized_gain_loss ?? null;
+    marketValueCardSource === "live"
+      ? summary?.live_total_unrealized_gain_loss ?? latestCompleteSnapshot?.unrealized_gain_loss ?? null
+      : latestCompleteSnapshot?.unrealized_gain_loss ?? summary?.live_total_unrealized_gain_loss ?? null;
   const displayedGainLossPct =
-    summary?.live_total_unrealized_gain_loss_pct ?? latestCompleteSnapshot?.unrealized_gain_loss_pct ?? null;
+    marketValueCardSource === "live"
+      ? summary?.live_total_unrealized_gain_loss_pct ?? latestCompleteSnapshot?.unrealized_gain_loss_pct ?? null
+      : latestCompleteSnapshot?.unrealized_gain_loss_pct ?? summary?.live_total_unrealized_gain_loss_pct ?? null;
   const selectedLots = useMemo(
     () => positions.filter((position) => position.ticker === selectedTicker),
     [positions, selectedTicker],
@@ -510,7 +542,9 @@ export default function PortfolioPage() {
 
       {marketValueCardSource === "eod" && latestCompleteSnapshot ? (
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
-          Live quotes are incomplete, so the summary cards are showing the latest complete EOD snapshot from {latestCompleteSnapshot.snapshot_date}.
+          {marketSession === "open"
+            ? `Live quotes are incomplete, so the summary cards are showing the latest complete EOD snapshot from ${latestCompleteSnapshot.snapshot_date}.`
+            : `New York market hours are closed, so the summary cards are showing the latest complete EOD snapshot from ${latestCompleteSnapshot.snapshot_date} until the market opens at 9:30 AM ET.`}
         </div>
       ) : null}
 
