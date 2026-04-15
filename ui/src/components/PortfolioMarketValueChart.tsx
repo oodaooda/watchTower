@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -12,6 +12,17 @@ import {
 import { PortfolioSnapshotHistory } from "../lib/api";
 
 const DEFAULT_VISIBLE_START = new Date("2026-01-01T00:00:00").getTime();
+
+type ChartRangeKey = "1w" | "1m" | "3m" | "ytd" | "1y" | "max";
+
+const RANGE_OPTIONS: Array<{ key: ChartRangeKey; label: string }> = [
+  { key: "1w", label: "1W" },
+  { key: "1m", label: "1M" },
+  { key: "3m", label: "3M" },
+  { key: "ytd", label: "YTD" },
+  { key: "1y", label: "1Y" },
+  { key: "max", label: "MAX" },
+];
 
 type Props = {
   history: PortfolioSnapshotHistory | null;
@@ -43,11 +54,48 @@ function fmtCompactCurrency(value?: number | null) {
 
 export default function PortfolioMarketValueChart({ history, loading, error, saving, onRunSnapshot }: Props) {
   const snapshots = history?.snapshots ?? [];
+  const [selectedRange, setSelectedRange] = useState<ChartRangeKey>("ytd");
+  const visibleSnapshots = useMemo(
+    () =>
+      snapshots.filter((snapshot) => {
+        if (snapshot.total_market_value === null || snapshot.total_market_value === undefined) return false;
+        return new Date(`${snapshot.snapshot_date}T00:00:00`).getTime() >= DEFAULT_VISIBLE_START;
+      }),
+    [snapshots],
+  );
+  const rangeStart = useMemo(() => {
+    if (!visibleSnapshots.length) return DEFAULT_VISIBLE_START;
+    const latestTs = new Date(`${visibleSnapshots[visibleSnapshots.length - 1].snapshot_date}T00:00:00`).getTime();
+    const latestDate = new Date(latestTs);
+    switch (selectedRange) {
+      case "1w":
+        return Math.max(DEFAULT_VISIBLE_START, latestTs - 7 * 24 * 60 * 60 * 1000);
+      case "1m": {
+        const start = new Date(latestDate);
+        start.setMonth(start.getMonth() - 1);
+        return Math.max(DEFAULT_VISIBLE_START, start.getTime());
+      }
+      case "3m": {
+        const start = new Date(latestDate);
+        start.setMonth(start.getMonth() - 3);
+        return Math.max(DEFAULT_VISIBLE_START, start.getTime());
+      }
+      case "ytd":
+        return DEFAULT_VISIBLE_START;
+      case "1y": {
+        const start = new Date(latestDate);
+        start.setFullYear(start.getFullYear() - 1);
+        return Math.max(DEFAULT_VISIBLE_START, start.getTime());
+      }
+      case "max":
+      default:
+        return DEFAULT_VISIBLE_START;
+    }
+  }, [selectedRange, visibleSnapshots]);
   const chartData = useMemo(
     () =>
-      snapshots
-        .filter((snapshot) => snapshot.total_market_value !== null && snapshot.total_market_value !== undefined)
-        .filter((snapshot) => new Date(`${snapshot.snapshot_date}T00:00:00`).getTime() >= DEFAULT_VISIBLE_START)
+      visibleSnapshots
+        .filter((snapshot) => new Date(`${snapshot.snapshot_date}T00:00:00`).getTime() >= rangeStart)
         .map((snapshot) => ({
           ts: new Date(`${snapshot.snapshot_date}T00:00:00`).getTime(),
           marketValue: Number(snapshot.total_market_value),
@@ -56,7 +104,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
           isInferred: snapshot.is_inferred,
           source: snapshot.source,
         })),
-    [snapshots],
+    [rangeStart, visibleSnapshots],
   );
 
   const latestSnapshot = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
@@ -71,6 +119,25 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
     change: history?.summary?.[item.key]?.change,
     changePct: history?.summary?.[item.key]?.change_pct,
   }));
+
+  const visibleRangeLabel = useMemo(() => {
+    switch (selectedRange) {
+      case "1w":
+        return "Last 1 week";
+      case "1m":
+        return "Last 1 month";
+      case "3m":
+        return "Last 3 months";
+      case "ytd":
+        return "YTD";
+      case "1y":
+        return "Last 1 year";
+      case "max":
+        return "Max available";
+      default:
+        return "YTD";
+    }
+  }, [selectedRange]);
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
@@ -102,12 +169,32 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {RANGE_OPTIONS.map((option) => {
+          const selected = option.key === selectedRange;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setSelectedRange(option.key)}
+              className={`h-8 rounded-xl border px-3 text-xs font-medium transition-colors ${
+                selected
+                  ? "border-sky-500/60 bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                  : "border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100/60 dark:hover:bg-zinc-800/60"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
       {latestSnapshot ? (
         <div className="flex flex-wrap gap-3 text-xs text-zinc-500 dark:text-zinc-400">
           <span>Latest snapshot: {latestSnapshot.snapshot_date}</span>
           <span>Priced positions: {latestSnapshot.priced_positions}</span>
           <span>Unpriced positions: {latestSnapshot.unpriced_positions}</span>
-          <span>Visible range: 2026-01-01 onward</span>
+          <span>Visible range: {visibleRangeLabel}</span>
         </div>
       ) : null}
 
