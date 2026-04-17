@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   CartesianGrid,
+  LabelList,
   Line,
   LineChart,
   ReferenceDot,
@@ -138,6 +139,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         return "YTD";
     }
   }, [selectedRange]);
+  const showPinnedPointLabels = selectedRange === "1w";
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
@@ -242,9 +244,19 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
                 dataKey="marketValue"
                 stroke="#0284c7"
                 strokeWidth={2}
-                dot={false}
+                dot={showPinnedPointLabels ? { r: 3, strokeWidth: 1, fill: "#0284c7" } : false}
                 activeDot={{ r: 5 }}
-              />
+              >
+                {showPinnedPointLabels ? (
+                  <LabelList
+                    dataKey="marketValue"
+                    position="top"
+                    offset={10}
+                    formatter={(value: number) => fmtCompactCurrency(value)}
+                    className="fill-zinc-500 text-[10px]"
+                  />
+                ) : null}
+              </Line>
               <Line type="monotone" dataKey="costBasis" stroke="#71717a" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
             </LineChart>
           </ResponsiveContainer>
