@@ -31,8 +31,15 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, HTTPException
 
 from app.core.db import SessionLocal
-from app.services.portfolio_snapshots import create_or_update_portfolio_snapshot
-from app.services.price_history import sync_tracked_assets_daily_history
+from app.services.portfolio_snapshots import (
+    create_or_update_portfolio_snapshot,
+    rebuild_portfolio_snapshots_from_dates,
+)
+from app.services.price_history import (
+    backfill_portfolio_daily_history,
+    complete_portfolio_price_dates,
+    sync_tracked_assets_daily_history,
+)
 
 log = logging.getLogger(__name__)
 
@@ -77,11 +84,24 @@ def daily_prices_job() -> None:
     db = SessionLocal()
     try:
         synced = sync_tracked_assets_daily_history(db)
-        snapshot = create_or_update_portfolio_snapshot(db)
+        portfolio_backfill = backfill_portfolio_daily_history(
+            db,
+            force_refresh=True,
+            sleep_seconds=12.0,
+        )
+        snapshot_result = rebuild_portfolio_snapshots_from_dates(
+            db,
+            complete_portfolio_price_dates(db),
+            source="asset_price_daily_scheduler",
+        )
+        snapshot = create_or_update_portfolio_snapshot(db, source="asset_price_daily_scheduler")
         log.info(
-            "[jobs] daily_prices_job done synced_assets=%s snapshot_date=%s",
+            "[jobs] daily_prices_job done synced_assets=%s portfolio_succeeded=%s/%s snapshot_date=%s latest_complete_snapshot_date=%s",
             synced,
+            portfolio_backfill.get("succeeded_assets"),
+            portfolio_backfill.get("total_assets"),
             snapshot.snapshot_date.isoformat() if snapshot else None,
+            snapshot_result.get("latest_complete_snapshot_date"),
         )
     finally:
         db.close()
