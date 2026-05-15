@@ -15,6 +15,9 @@ import { PortfolioSnapshotHistory } from "../lib/api";
 const DEFAULT_VISIBLE_START = new Date("2026-01-01T00:00:00").getTime();
 
 type ChartRangeKey = "1w" | "1m" | "3m" | "ytd" | "1y" | "max";
+type ViewMode = "chart" | "table";
+type SortDirection = "asc" | "desc";
+type SnapshotTableSortKey = "date" | "marketValue" | "costBasis" | "dayChange" | "dayChangePct";
 
 const RANGE_OPTIONS: Array<{ key: ChartRangeKey; label: string }> = [
   { key: "1w", label: "1W" },
@@ -39,6 +42,8 @@ type ChartPoint = {
   snapshotDate: string;
   marketValue: number;
   costBasis: number;
+  dayChange: number | null;
+  dayChangePct: number | null;
   complete: boolean;
   isInferred: boolean;
   source: string;
@@ -112,9 +117,17 @@ function PortfolioValueTooltip({ active, payload }: { active?: boolean; payload?
   );
 }
 
+function sortIndicator(active: boolean, direction: SortDirection) {
+  if (!active) return "↕";
+  return direction === "asc" ? "▲" : "▼";
+}
+
 export default function PortfolioMarketValueChart({ history, loading, error, saving, onRunSnapshot, summaryCards: portfolioSummaryCards = [] }: Props) {
   const snapshots = history?.snapshots ?? [];
   const [selectedRange, setSelectedRange] = useState<ChartRangeKey>("ytd");
+  const [viewMode, setViewMode] = useState<ViewMode>("chart");
+  const [tableSortKey, setTableSortKey] = useState<SnapshotTableSortKey>("date");
+  const [tableSortDirection, setTableSortDirection] = useState<SortDirection>("desc");
   const visibleSnapshots = useMemo(
     () =>
       snapshots.filter((snapshot) => {
@@ -152,21 +165,45 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         return DEFAULT_VISIBLE_START;
     }
   }, [selectedRange, visibleSnapshots]);
-  const chartData = useMemo(
-    () =>
-      visibleSnapshots
-        .filter((snapshot) => new Date(`${snapshot.snapshot_date}T00:00:00`).getTime() >= rangeStart)
-        .map((snapshot) => ({
+  const allCompleteTableRows = useMemo(() => {
+    const rows = visibleSnapshots
+      .filter((snapshot) => !snapshot.is_inferred)
+      .map((snapshot, index, bucket) => {
+        const previous = index > 0 ? bucket[index - 1] : undefined;
+        const marketValue = Number(snapshot.total_market_value);
+        const previousMarketValue = previous?.total_market_value != null ? Number(previous.total_market_value) : null;
+        const dayChange = previousMarketValue === null ? null : marketValue - previousMarketValue;
+        const dayChangePct = previousMarketValue === null || previousMarketValue === 0 ? null : (dayChange ?? 0) / previousMarketValue;
+        return {
           ts: new Date(`${snapshot.snapshot_date}T00:00:00`).getTime(),
           snapshotDate: snapshot.snapshot_date,
-          marketValue: Number(snapshot.total_market_value),
+          marketValue,
           costBasis: Number(snapshot.total_cost_basis),
+          dayChange,
+          dayChangePct,
           complete: snapshot.is_complete,
           isInferred: snapshot.is_inferred,
           source: snapshot.source,
-        })),
-    [rangeStart, visibleSnapshots],
+        };
+      });
+    return rows;
+  }, [visibleSnapshots]);
+  const chartData = useMemo(
+    () => allCompleteTableRows.filter((snapshot) => snapshot.ts >= rangeStart),
+    [allCompleteTableRows, rangeStart],
   );
+  const sortedTableData = useMemo(() => {
+    const direction = tableSortDirection === "asc" ? 1 : -1;
+    return [...chartData].sort((a, b) => {
+      const aValue = tableSortKey === "date" ? a.ts : a[tableSortKey];
+      const bValue = tableSortKey === "date" ? b.ts : b[tableSortKey];
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
+      if (aValue < bValue) return -1 * direction;
+      if (aValue > bValue) return 1 * direction;
+      return b.ts - a.ts;
+    });
+  }, [chartData, tableSortDirection, tableSortKey]);
 
   const latestSnapshot = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
   const incompleteCount = snapshots.filter((snapshot) => !snapshot.is_complete).length;
@@ -208,6 +245,28 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
     const padding = Math.max((max - min) * 0.12, 1000);
     return [Math.max(0, Math.floor(min - padding)), Math.ceil(max + padding)];
   }, [chartData]);
+  const handleTableSort = (key: SnapshotTableSortKey) => {
+    if (tableSortKey === key) {
+      setTableSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setTableSortKey(key);
+    setTableSortDirection(key === "date" ? "desc" : "asc");
+  };
+  const tableHeader = (key: SnapshotTableSortKey, label: string, align: "left" | "right" = "right") => (
+    <th className={`px-3 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => handleTableSort(key)}
+        className={`inline-flex items-center gap-1 hover:underline ${align === "right" ? "justify-end" : ""}`}
+      >
+        <span>{label}</span>
+        <span className={tableSortKey === key ? "opacity-100" : "opacity-50"}>
+          {sortIndicator(tableSortKey === key, tableSortDirection)}
+        </span>
+      </button>
+    </th>
+  );
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
@@ -251,6 +310,22 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="mr-2 inline-flex rounded-xl border border-zinc-300 dark:border-zinc-700 p-0.5">
+          {(["chart", "table"] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              className={`h-7 rounded-lg px-3 text-xs font-medium capitalize transition-colors ${
+                viewMode === mode
+                  ? "bg-zinc-900 text-white dark:bg-zinc-200 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100/60 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
         {RANGE_OPTIONS.map((option) => {
           const selected = option.key === selectedRange;
           return (
@@ -291,6 +366,35 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         <div className="text-sm text-red-500">{error}</div>
       ) : chartData.length === 0 ? (
         <div className="text-sm text-zinc-500">No portfolio snapshots yet. Use Record Snapshot after EOD prices are available.</div>
+      ) : viewMode === "table" ? (
+        <div className="overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <table className="min-w-full text-sm">
+            <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900/60">
+              <tr>
+                {tableHeader("date", "Date", "left")}
+                {tableHeader("marketValue", "Market Value")}
+                {tableHeader("costBasis", "Cost Basis")}
+                {tableHeader("dayChange", "Day Change")}
+                {tableHeader("dayChangePct", "Day Change %")}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedTableData.map((point) => (
+                <tr key={point.snapshotDate} className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40">
+                  <td className="px-3 py-3 font-medium">{fmtDate(point.snapshotDate)}</td>
+                  <td className="px-3 py-3 text-right">{fmtCurrency(point.marketValue)}</td>
+                  <td className="px-3 py-3 text-right">{fmtCurrency(point.costBasis)}</td>
+                  <td className={`px-3 py-3 text-right ${point.dayChange && point.dayChange > 0 ? "text-emerald-500" : point.dayChange && point.dayChange < 0 ? "text-red-500" : ""}`}>
+                    {fmtCurrency(point.dayChange)}
+                  </td>
+                  <td className={`px-3 py-3 text-right ${point.dayChangePct && point.dayChangePct > 0 ? "text-emerald-500" : point.dayChangePct && point.dayChangePct < 0 ? "text-red-500" : ""}`}>
+                    {fmtPercent(point.dayChangePct)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">

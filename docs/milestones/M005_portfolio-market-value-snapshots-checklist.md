@@ -44,11 +44,16 @@ This checklist covers forward-only portfolio market value history based on store
 - [x] Show incomplete snapshot warning and avoid charting incomplete portfolio totals.
 - [x] Add one inferred initial cost-basis baseline point.
 - [x] Move the chart to the top section of the portfolio page.
+- [x] Add Chart/Table tabs for portfolio market value history.
+- [x] Add sortable daily snapshot table with date, market value, cost basis, day change, and day change percent.
+- [x] Add grouped holdings sorting that preserves Cash/Equity/ETF/Option sections.
 
 **Phase 3 Tests**
 - [x] Build: frontend compiles with snapshot history UI.
 - [x] Review: wording avoids true-performance claims.
 - [x] Integration: snapshot API returns inferred baseline without affecting real-only summary cards.
+- [x] Review: daily table uses complete real snapshots and the selected visible range.
+- [x] Review: holdings sort keeps subtotal rows pinned and sorts only within each asset group.
 
 **Commit / Push Gate**
 - [x] Commit after frontend verification passes.

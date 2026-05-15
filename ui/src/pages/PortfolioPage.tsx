@@ -29,6 +29,19 @@ const btnGhost =
   "border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 " +
   "hover:bg-zinc-100/60 dark:hover:bg-zinc-800/60 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:opacity-40";
 
+type SortDirection = "asc" | "desc";
+type HoldingsSortKey =
+  | "ticker"
+  | "name"
+  | "lot_count"
+  | "total_quantity"
+  | "weighted_avg_cost_basis"
+  | "total_cost_basis"
+  | "current_price"
+  | "market_value"
+  | "unrealized_gain_loss"
+  | "portfolio_weight";
+
 function fmtCurrency(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -56,6 +69,11 @@ function assetTypeLabel(value?: string | null) {
   if (normalized === "option") return "Option";
   if (normalized === "cash") return "Cash";
   return "Equity";
+}
+
+function sortIndicator(active: boolean, direction: SortDirection) {
+  if (!active) return "↕";
+  return direction === "asc" ? "▲" : "▼";
 }
 
 function nyMarketSessionState(now: Date): "open" | "closed" {
@@ -215,6 +233,8 @@ export default function PortfolioPage() {
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotSaving, setSnapshotSaving] = useState(false);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [holdingsSortKey, setHoldingsSortKey] = useState<HoldingsSortKey>("ticker");
+  const [holdingsSortDirection, setHoldingsSortDirection] = useState<SortDirection>("asc");
 
   const loadPortfolio = useCallback(async () => {
     setLoading(true);
@@ -431,6 +451,34 @@ export default function PortfolioPage() {
     () => positions.filter((position) => position.ticker === selectedTicker),
     [positions, selectedTicker],
   );
+  const sortHoldings = useCallback(
+    (items: PortfolioTickerGroup[]) => {
+      const direction = holdingsSortDirection === "asc" ? 1 : -1;
+      return [...items].sort((a, b) => {
+        const aValue =
+          holdingsSortKey === "name"
+            ? a.name || ""
+            : holdingsSortKey === "ticker"
+              ? a.ticker
+              : a[holdingsSortKey];
+        const bValue =
+          holdingsSortKey === "name"
+            ? b.name || ""
+            : holdingsSortKey === "ticker"
+              ? b.ticker
+              : b[holdingsSortKey];
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+        if (typeof aValue === "string" || typeof bValue === "string") {
+          return String(aValue).localeCompare(String(bValue)) * direction;
+        }
+        if (aValue < bValue) return -1 * direction;
+        if (aValue > bValue) return 1 * direction;
+        return a.ticker.localeCompare(b.ticker);
+      });
+    },
+    [holdingsSortDirection, holdingsSortKey],
+  );
   const groupsByAssetType = useMemo(() => {
     const order = ["cash", "equity", "etf", "option"];
     const buckets = new Map<
@@ -474,12 +522,35 @@ export default function PortfolioPage() {
       buckets.set(assetType, existing);
     }
 
-    return Array.from(buckets.values()).sort((a, b) => {
+    return Array.from(buckets.values()).map((section) => ({ ...section, groups: sortHoldings(section.groups) })).sort((a, b) => {
       const aIndex = order.indexOf(a.assetType);
       const bIndex = order.indexOf(b.assetType);
       return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex);
     });
-  }, [groups]);
+  }, [groups, sortHoldings]);
+
+  const handleHoldingsSort = (key: HoldingsSortKey) => {
+    if (holdingsSortKey === key) {
+      setHoldingsSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setHoldingsSortKey(key);
+    setHoldingsSortDirection(key === "ticker" || key === "name" ? "asc" : "desc");
+  };
+  const holdingsHeader = (key: HoldingsSortKey, label: string, align: "left" | "right" = "right") => (
+    <th className={`px-3 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => handleHoldingsSort(key)}
+        className={`inline-flex items-center gap-1 hover:underline ${align === "right" ? "justify-end" : ""}`}
+      >
+        <span>{label}</span>
+        <span className={holdingsSortKey === key ? "opacity-100" : "opacity-50"}>
+          {sortIndicator(holdingsSortKey === key, holdingsSortDirection)}
+        </span>
+      </button>
+    </th>
+  );
 
   const cards = useMemo(
     () => [
@@ -709,16 +780,16 @@ export default function PortfolioPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-3 py-3">Ticker</th>
-              <th className="px-3 py-3">Asset</th>
-              <th className="px-3 py-3 text-right">Lots</th>
-              <th className="px-3 py-3 text-right">Total Qty</th>
-              <th className="px-3 py-3 text-right">Weighted Avg Cost</th>
-              <th className="px-3 py-3 text-right">Cost Basis</th>
-              <th className="px-3 py-3 text-right">Price</th>
-              <th className="px-3 py-3 text-right">Market Value</th>
-              <th className="px-3 py-3 text-right">Gain/Loss</th>
-              <th className="px-3 py-3 text-right">Weight</th>
+              {holdingsHeader("ticker", "Ticker", "left")}
+              {holdingsHeader("name", "Asset", "left")}
+              {holdingsHeader("lot_count", "Lots")}
+              {holdingsHeader("total_quantity", "Total Qty")}
+              {holdingsHeader("weighted_avg_cost_basis", "Weighted Avg Cost")}
+              {holdingsHeader("total_cost_basis", "Cost Basis")}
+              {holdingsHeader("current_price", "Price")}
+              {holdingsHeader("market_value", "Market Value")}
+              {holdingsHeader("unrealized_gain_loss", "Gain/Loss")}
+              {holdingsHeader("portfolio_weight", "Weight")}
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
           </thead>
