@@ -31,6 +31,17 @@ type Props = {
   error: string | null;
   saving: boolean;
   onRunSnapshot: () => void;
+  summaryCards?: Array<{ label: string; value: string }>;
+};
+
+type ChartPoint = {
+  ts: number;
+  snapshotDate: string;
+  marketValue: number;
+  costBasis: number;
+  complete: boolean;
+  isInferred: boolean;
+  source: string;
 };
 
 function fmtCurrency(value?: number | null) {
@@ -53,7 +64,55 @@ function fmtCompactCurrency(value?: number | null) {
   }).format(value);
 }
 
-export default function PortfolioMarketValueChart({ history, loading, error, saving, onRunSnapshot }: Props) {
+function fmtDate(value?: number | string | null) {
+  if (value === null || value === undefined) return "-";
+  const date = typeof value === "number" ? new Date(value) : new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function PortfolioValueTooltip({ active, payload }: { active?: boolean; payload?: Array<{ dataKey?: string; value?: number; payload?: ChartPoint }> }) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+
+  const rows = payload
+    .filter((item) => item.dataKey === "marketValue" || item.dataKey === "costBasis")
+    .map((item) => {
+      const isMarketValue = item.dataKey === "marketValue";
+      return {
+        label: isMarketValue ? (point.isInferred ? "Inferred Baseline" : "Market Value") : "Cost Basis",
+        value: fmtCurrency(item.value),
+        color: isMarketValue ? "bg-sky-400" : "bg-zinc-400",
+      };
+    });
+
+  return (
+    <div className="min-w-[220px] rounded-xl border border-zinc-200/70 bg-white/90 px-3 py-2.5 text-sm shadow-xl shadow-zinc-950/10 backdrop-blur-md dark:border-zinc-700/70 dark:bg-zinc-950/85 dark:shadow-black/40">
+      <div className="mb-2 border-b border-zinc-200/70 pb-2 dark:border-zinc-800">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Snapshot Date</div>
+        <div className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">{fmtDate(point.snapshotDate)}</div>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-5">
+            <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
+              <span className={`h-2 w-2 rounded-full ${row.color}`} />
+              <span>{row.label}</span>
+            </div>
+            <div className="font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">{row.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function PortfolioMarketValueChart({ history, loading, error, saving, onRunSnapshot, summaryCards: portfolioSummaryCards = [] }: Props) {
   const snapshots = history?.snapshots ?? [];
   const [selectedRange, setSelectedRange] = useState<ChartRangeKey>("ytd");
   const visibleSnapshots = useMemo(
@@ -99,6 +158,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
         .filter((snapshot) => new Date(`${snapshot.snapshot_date}T00:00:00`).getTime() >= rangeStart)
         .map((snapshot) => ({
           ts: new Date(`${snapshot.snapshot_date}T00:00:00`).getTime(),
+          snapshotDate: snapshot.snapshot_date,
           marketValue: Number(snapshot.total_market_value),
           costBasis: Number(snapshot.total_cost_basis),
           complete: snapshot.is_complete,
@@ -140,6 +200,14 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
     }
   }, [selectedRange]);
   const showPinnedPointLabels = selectedRange === "1w";
+  const yDomain = useMemo(() => {
+    if (!chartData.length) return ["auto", "auto"];
+    const values = chartData.flatMap((point) => [point.marketValue, point.costBasis]);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const padding = Math.max((max - min) * 0.12, 1000);
+    return [Math.max(0, Math.floor(min - padding)), Math.ceil(max + padding)];
+  }, [chartData]);
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 space-y-3">
@@ -158,6 +226,17 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
           {saving ? "Recording..." : "Record Snapshot"}
         </button>
       </div>
+
+      {portfolioSummaryCards.length ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {portfolioSummaryCards.map((item) => (
+            <div key={item.label} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3">
+              <div className="text-xs uppercase tracking-wide text-zinc-500">{item.label}</div>
+              <div className="mt-1 text-xl font-semibold">{item.value}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-4">
         {summaryCards.map((item) => (
@@ -225,22 +304,10 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
                 tickFormatter={(value) => new Date(value as number).toLocaleDateString()}
                 minTickGap={16}
               />
-              <YAxis tickFormatter={(value) => fmtCompactCurrency(Number(value))} width={96} />
-              <Tooltip
-                labelFormatter={(value) => new Date(value as number).toLocaleDateString()}
-                formatter={(value: number, name: string, item) => {
-                  const payload = item.payload as { isInferred?: boolean };
-                  const label =
-                    name === "marketValue"
-                      ? payload?.isInferred
-                        ? "Inferred Baseline"
-                        : "Market Value"
-                      : "Cost Basis";
-                  return [fmtCurrency(value), label];
-                }}
-              />
+              <YAxis domain={yDomain} tickFormatter={(value) => fmtCompactCurrency(Number(value))} width={96} />
+              <Tooltip content={<PortfolioValueTooltip />} cursor={{ stroke: "rgba(148, 163, 184, 0.65)", strokeWidth: 1 }} />
               <Line
-                type="monotone"
+                type="linear"
                 dataKey="marketValue"
                 stroke="#0284c7"
                 strokeWidth={2}
@@ -257,7 +324,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
                   />
                 ) : null}
               </Line>
-              <Line type="monotone" dataKey="costBasis" stroke="#71717a" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+              <Line type="linear" dataKey="costBasis" stroke="#71717a" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

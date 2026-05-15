@@ -475,7 +475,7 @@ export type PortfolioImportRowIn = {
 };
 
 export async function fetchPortfolio(): Promise<PortfolioOverviewOut> {
-  const res = await fetch(`${API_BASE}/portfolio`);
+  const res = await fetch(`${API_BASE}/portfolio`, { cache: "no-store" });
   if (!res.ok) throw new Error(`portfolio ${res.status}`);
   return res.json();
 }
@@ -525,7 +525,7 @@ export async function importPortfolioPositions(
 }
 
 export async function fetchPortfolioSnapshots(): Promise<PortfolioSnapshotHistory> {
-  const res = await fetch(`${API_BASE}/portfolio/snapshots`);
+  const res = await fetch(`${API_BASE}/portfolio/snapshots`, { cache: "no-store" });
   if (!res.ok) throw new Error(`portfolio/snapshots ${res.status}`);
   return res.json();
 }
@@ -533,6 +533,7 @@ export async function fetchPortfolioSnapshots(): Promise<PortfolioSnapshotHistor
 export async function runPortfolioSnapshot(): Promise<PortfolioSnapshotHistory> {
   const res = await fetch(`${API_BASE}/portfolio/snapshots/run`, {
     method: "POST",
+    cache: "no-store",
   });
   if (!res.ok) throw new Error(`portfolio/snapshots/run ${res.status}`);
   return res.json();

@@ -83,7 +83,6 @@ def daily_prices_job() -> None:
     log.info("[jobs] daily_prices_job start")
     db = SessionLocal()
     try:
-        synced = sync_tracked_assets_daily_history(db)
         portfolio_backfill = backfill_portfolio_daily_history(
             db,
             force_refresh=True,
@@ -95,6 +94,7 @@ def daily_prices_job() -> None:
             source="asset_price_daily_scheduler",
         )
         snapshot = create_or_update_portfolio_snapshot(db, source="asset_price_daily_scheduler")
+        synced = sync_tracked_assets_daily_history(db)
         log.info(
             "[jobs] daily_prices_job done synced_assets=%s portfolio_succeeded=%s/%s snapshot_date=%s latest_complete_snapshot_date=%s",
             synced,
@@ -120,6 +120,10 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
     Returns:
         Running `BackgroundScheduler` instance (so the caller can shut it down).
     """
+    global SCHED
+    if SCHED and SCHED.running:
+        return SCHED
+
     sched = BackgroundScheduler(timezone=tz)
 
     # Nightly fundamentals at 03:00
@@ -139,6 +143,7 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
     )
 
     sched.start()
+    SCHED = sched
     log.info("[jobs] scheduler started with timezone=%s", tz)
     return sched
 

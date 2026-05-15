@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 from decimal import Decimal
 import time
 from typing import Dict, Iterable, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import HTTPException
@@ -14,9 +15,40 @@ from app.core.config import settings
 from app.core.models import AssetPriceDaily, Company, PortfolioPosition
 
 ALPHA_ENDPOINT = "https://www.alphavantage.co/query"
-EOD_STALE_AFTER_DAYS = 2
 DEFAULT_ALPHA_DAILY_SLEEP_SECONDS = 12.0
 ALPHA_RATE_LIMIT_RETRY_SECONDS = 15.0
+EOD_READY_HOUR_ET = 18
+
+
+def _previous_weekday(value: date) -> date:
+    current = value - timedelta(days=1)
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current
+
+
+def _weekdays_between(start_date: date, end_date: date) -> List[date]:
+    days: List[date] = []
+    current = start_date
+    while current <= end_date:
+        if current.weekday() < 5:
+            days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _is_cash_asset(company: Company) -> bool:
+    return (company.asset_type or "").lower() == "cash" or company.ticker.upper().startswith("CASH_")
+
+
+def expected_latest_eod_date(now: Optional[datetime] = None) -> date:
+    """Best-effort latest EOD date without a market-holiday calendar."""
+    ny_now = now.astimezone(ZoneInfo("America/New_York")) if now else datetime.now(ZoneInfo("America/New_York"))
+    today = ny_now.date()
+    after_eod_ready = ny_now.time() >= dt_time(EOD_READY_HOUR_ET, 0)
+    if today.weekday() < 5 and after_eod_ready:
+        return today
+    return _previous_weekday(today)
 
 
 def fetch_alpha_daily_adjusted(symbol: str, api_key: str) -> List[Tuple[date, float]]:
@@ -106,11 +138,24 @@ def ensure_daily_history(
     force_refresh: bool = False,
 ) -> List[AssetPriceDaily]:
     rows = load_daily_history(db, company)
+    if _is_cash_asset(company):
+        expected_date = expected_latest_eod_date()
+        start_date = rows[-1].price_date + timedelta(days=1) if rows else expected_date
+        if force_refresh or not rows or rows[-1].price_date < expected_date:
+            upsert_daily_history(
+                db,
+                company,
+                [(price_date, 1.0) for price_date in _weekdays_between(start_date, expected_date)],
+                source="manual_cash",
+            )
+            rows = load_daily_history(db, company)
+        return rows
+
     if not settings.alpha_vantage_api_key:
         return rows
 
     latest_date = rows[-1].price_date if rows else None
-    is_stale = latest_date is None or latest_date < (date.today() - timedelta(days=EOD_STALE_AFTER_DAYS))
+    is_stale = latest_date is None or latest_date < expected_latest_eod_date()
     if force_refresh or is_stale:
         points = fetch_alpha_daily_adjusted(company.ticker.upper(), settings.alpha_vantage_api_key)
         rows = upsert_daily_history(db, company, points)

@@ -54,6 +54,7 @@ function assetTypeLabel(value?: string | null) {
   const normalized = (value || "equity").toLowerCase();
   if (normalized === "etf") return "ETF";
   if (normalized === "option") return "Option";
+  if (normalized === "cash") return "Cash";
   return "Equity";
 }
 
@@ -205,6 +206,10 @@ export default function PortfolioPage() {
   const [quantity, setQuantity] = useState("");
   const [avgCostBasis, setAvgCostBasis] = useState("");
   const [notes, setNotes] = useState("");
+  const [editingLotId, setEditingLotId] = useState<number | null>(null);
+  const [lotQuantity, setLotQuantity] = useState("");
+  const [lotAvgCostBasis, setLotAvgCostBasis] = useState("");
+  const [lotNotes, setLotNotes] = useState("");
   const [importText, setImportText] = useState("");
   const [snapshotHistory, setSnapshotHistory] = useState<PortfolioSnapshotHistory | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
@@ -263,6 +268,20 @@ export default function PortfolioPage() {
     setShowEditPanel(true);
   };
 
+  const startLotEdit = (position: PortfolioPosition) => {
+    setEditingLotId(position.position_id);
+    setLotQuantity(String(position.quantity));
+    setLotAvgCostBasis(String(position.avg_cost_basis));
+    setLotNotes(position.notes || "");
+  };
+
+  const cancelLotEdit = () => {
+    setEditingLotId(null);
+    setLotQuantity("");
+    setLotAvgCostBasis("");
+    setLotNotes("");
+  };
+
   const importPreview = useMemo(() => parsePortfolioImport(importText), [importText]);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -288,6 +307,7 @@ export default function PortfolioPage() {
         ? await updatePortfolioPosition(editingPositionId, payload)
         : await createPortfolioPosition({ ticker, ...payload });
       setPortfolio(data);
+      await loadSnapshots();
       resetForm();
     } catch (err) {
       setError((err as Error).message || "Failed to save portfolio position");
@@ -302,11 +322,38 @@ export default function PortfolioPage() {
       setError(null);
       const data = await deletePortfolioPosition(positionId);
       setPortfolio(data);
+      await loadSnapshots();
       if (editingPositionId === positionId) {
         resetForm();
       }
     } catch (err) {
       setError((err as Error).message || "Failed to delete portfolio position");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLotSave = async (positionId: number) => {
+    const parsedQuantity = Number(lotQuantity);
+    const parsedAvgCost = Number(lotAvgCostBasis);
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0 || !Number.isFinite(parsedAvgCost) || parsedAvgCost < 0) {
+      setError("Enter a valid lot quantity and average cost basis.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      setError(null);
+      const data = await updatePortfolioPosition(positionId, {
+        quantity: parsedQuantity,
+        avg_cost_basis: parsedAvgCost,
+        notes: lotNotes.trim() || undefined,
+      });
+      setPortfolio(data);
+      await loadSnapshots();
+      cancelLotEdit();
+    } catch (err) {
+      setError((err as Error).message || "Failed to update lot");
     } finally {
       setSaving(false);
     }
@@ -319,6 +366,7 @@ export default function PortfolioPage() {
       setError(null);
       const data = await importPortfolioPositions(importPreview.rows, true);
       setPortfolio(data);
+      await loadSnapshots();
       setImportText("");
       setShowImportPanel(false);
       resetForm();
@@ -384,7 +432,7 @@ export default function PortfolioPage() {
     [positions, selectedTicker],
   );
   const groupsByAssetType = useMemo(() => {
-    const order = ["equity", "etf", "option"];
+    const order = ["cash", "equity", "etf", "option"];
     const buckets = new Map<
       string,
       {
@@ -520,16 +568,8 @@ export default function PortfolioPage() {
         error={snapshotError}
         saving={snapshotSaving}
         onRunSnapshot={() => void handleRunSnapshot()}
+        summaryCards={cards}
       />
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {cards.map((item) => (
-          <div key={item.label} className={`${card} p-4`}>
-            <div className="text-xs uppercase tracking-wide text-zinc-500">{item.label}</div>
-            <div className="mt-2 text-2xl font-semibold">{item.value}</div>
-          </div>
-        ))}
-      </div>
 
       {marketValueCardSource === "live" && summary && !summary.live_total_is_complete ? (
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -770,40 +810,90 @@ export default function PortfolioPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedLots.map((position) => (
-                    <tr
-                      key={position.position_id}
-                      className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
-                    >
-                      <td className="px-3 py-3 text-zinc-500">{position.position_id}</td>
-                      <td className="px-3 py-3 text-right uppercase text-xs text-zinc-500">{position.entry_source}</td>
-                      <td className="px-3 py-3 text-right">{fmtNumber(position.quantity)}</td>
-                      <td className="px-3 py-3 text-right">{fmtCurrency(position.avg_cost_basis)}</td>
-                      <td className="px-3 py-3 text-right">{fmtCurrency(position.total_cost_basis)}</td>
-                      <td className="px-3 py-3 text-right">{fmtCurrency(position.current_price)}</td>
-                      <td className="px-3 py-3 text-right">{fmtCurrency(position.market_value)}</td>
-                      <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss && position.unrealized_gain_loss > 0 ? "text-emerald-500" : position.unrealized_gain_loss && position.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
-                        {fmtCurrency(position.unrealized_gain_loss)}
-                      </td>
-                      <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct > 0 ? "text-emerald-500" : position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct < 0 ? "text-red-500" : ""}`}>
-                        {fmtPercent(position.unrealized_gain_loss_pct)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-xs text-zinc-500">{priceStatusLabel(position.price_status)}</td>
-                      <td className="px-3 py-3 text-right">
-                        <div className="flex justify-end gap-3">
-                          <button className="text-sm text-sky-600 hover:underline" onClick={() => handleEdit(position)}>
-                            Edit
-                          </button>
-                          <button className="text-sm text-red-500 hover:underline" onClick={() => void handleDelete(position.position_id)}>
-                            Remove
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {selectedLots.map((position) => {
+                    const isEditingLot = editingLotId === position.position_id;
+                    return (
+                      <tr
+                        key={position.position_id}
+                        className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40"
+                      >
+                        <td className="px-3 py-3 text-zinc-500">{position.position_id}</td>
+                        <td className="px-3 py-3 text-right uppercase text-xs text-zinc-500">{position.entry_source}</td>
+                        <td className="px-3 py-3 text-right">
+                          {isEditingLot ? (
+                            <input
+                              value={lotQuantity}
+                              onChange={(e) => setLotQuantity(e.target.value)}
+                              inputMode="decimal"
+                              className="h-9 w-28 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-right text-sm"
+                            />
+                          ) : (
+                            fmtNumber(position.quantity)
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          {isEditingLot ? (
+                            <input
+                              value={lotAvgCostBasis}
+                              onChange={(e) => setLotAvgCostBasis(e.target.value)}
+                              inputMode="decimal"
+                              className="h-9 w-28 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-right text-sm"
+                            />
+                          ) : (
+                            fmtCurrency(position.avg_cost_basis)
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-right">{fmtCurrency(position.total_cost_basis)}</td>
+                        <td className="px-3 py-3 text-right">{fmtCurrency(position.current_price)}</td>
+                        <td className="px-3 py-3 text-right">{fmtCurrency(position.market_value)}</td>
+                        <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss && position.unrealized_gain_loss > 0 ? "text-emerald-500" : position.unrealized_gain_loss && position.unrealized_gain_loss < 0 ? "text-red-500" : ""}`}>
+                          {fmtCurrency(position.unrealized_gain_loss)}
+                        </td>
+                        <td className={`px-3 py-3 text-right ${position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct > 0 ? "text-emerald-500" : position.unrealized_gain_loss_pct && position.unrealized_gain_loss_pct < 0 ? "text-red-500" : ""}`}>
+                          {fmtPercent(position.unrealized_gain_loss_pct)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-xs text-zinc-500">{priceStatusLabel(position.price_status)}</td>
+                        <td className="px-3 py-3 text-right">
+                          {isEditingLot ? (
+                            <div className="flex justify-end gap-3">
+                              <button className="text-sm text-sky-600 hover:underline disabled:opacity-40" disabled={saving} onClick={() => void handleLotSave(position.position_id)}>
+                                Save
+                              </button>
+                              <button className="text-sm text-zinc-500 hover:underline disabled:opacity-40" disabled={saving} onClick={cancelLotEdit}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-3">
+                              <button className="text-sm text-sky-600 hover:underline" onClick={() => startLotEdit(position)}>
+                                Edit
+                              </button>
+                              <button className="text-sm text-red-500 hover:underline" onClick={() => void handleDelete(position.position_id)}>
+                                Remove
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+            {editingLotId ? (
+              <div className="mt-3">
+                <label className="block text-sm">
+                  Lot Notes
+                  <input
+                    value={lotNotes}
+                    onChange={(e) => setLotNotes(e.target.value)}
+                    placeholder="Optional note"
+                    className="mt-1 h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
+                  />
+                </label>
+              </div>
+            ) : null}
+            {error ? <div className="mt-3 text-sm text-red-500">{error}</div> : null}
           </div>
           <PriceHistoryChart ticker={selectedTicker} />
         </div>

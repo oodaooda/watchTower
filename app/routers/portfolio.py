@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from decimal import Decimal
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.models import Company, PortfolioPosition
+from app.core.models import AssetPriceDaily, Company, PortfolioPosition
 from app.core.schemas import (
     PortfolioImportRequest,
     PortfolioOverview,
@@ -79,6 +80,61 @@ def _serialize_snapshot_history(db: Session) -> PortfolioSnapshotHistory:
         ],
         summary=snapshot_history_summary(snapshots),
     )
+
+
+def _rebuild_existing_portfolio_snapshots(db: Session) -> None:
+    snapshots = load_portfolio_snapshots(db)
+    if not snapshots:
+        return
+
+    positions = db.scalars(select(PortfolioPosition)).all()
+    if not positions:
+        return
+
+    snapshot_dates = [row.snapshot_date for row in snapshots]
+    position_company_ids = sorted({position.company_id for position in positions})
+    price_rows = db.execute(
+        select(AssetPriceDaily.company_id, AssetPriceDaily.price_date, AssetPriceDaily.close_price).where(
+            AssetPriceDaily.company_id.in_(position_company_ids),
+            AssetPriceDaily.price_date.in_(snapshot_dates),
+        )
+    ).all()
+    price_by_date_and_company = {
+        (price_date, company_id): float(close_price)
+        for company_id, price_date, close_price in price_rows
+        if close_price is not None
+    }
+
+    for snapshot in snapshots:
+        total_cost_basis = 0.0
+        total_market_value = 0.0
+        priced_positions = 0
+        unpriced_positions = 0
+        for position in positions:
+            quantity = float(position.quantity or 0.0)
+            avg_cost_basis = float(position.avg_cost_basis or 0.0)
+            total_cost_basis += quantity * avg_cost_basis
+            close_price = price_by_date_and_company.get((snapshot.snapshot_date, position.company_id))
+            if close_price is None:
+                unpriced_positions += 1
+                continue
+            priced_positions += 1
+            total_market_value += quantity * close_price
+
+        is_complete = unpriced_positions == 0
+        market_value = total_market_value if is_complete else None
+        gain = market_value - total_cost_basis if market_value is not None else None
+        gain_pct = (gain / total_cost_basis) if gain is not None and total_cost_basis > 0 else None
+        snapshot.total_cost_basis = Decimal(str(total_cost_basis))
+        snapshot.total_market_value = Decimal(str(market_value)) if market_value is not None else None
+        snapshot.unrealized_gain_loss = Decimal(str(gain)) if gain is not None else None
+        snapshot.unrealized_gain_loss_pct = Decimal(str(gain_pct)) if gain_pct is not None else None
+        snapshot.is_complete = is_complete
+        snapshot.priced_positions = priced_positions
+        snapshot.unpriced_positions = unpriced_positions
+        snapshot.source = "asset_price_daily_recalculated_after_portfolio_update"
+
+    db.commit()
 
 
 def _validate_position_fields(quantity: float | None, avg_cost_basis: float | None) -> None:
@@ -260,7 +316,13 @@ def get_portfolio_snapshots(db: Session = Depends(get_db)):
 
 @router.post("/snapshots/run", response_model=PortfolioSnapshotHistory)
 def run_portfolio_snapshot(db: Session = Depends(get_db)):
-    create_or_update_portfolio_snapshot(db)
+    backfill_portfolio_daily_history(db, force_refresh=True, sleep_seconds=0.0)
+    rebuild_portfolio_snapshots_from_dates(
+        db,
+        complete_portfolio_price_dates(db),
+        source="asset_price_daily_manual_refresh",
+    )
+    create_or_update_portfolio_snapshot(db, source="asset_price_daily_manual_refresh")
     return _serialize_snapshot_history(db)
 
 
@@ -316,6 +378,7 @@ def add_portfolio_position(payload: PortfolioPositionIn, db: Session = Depends(g
         )
     )
     db.commit()
+    _rebuild_existing_portfolio_snapshots(db)
     return _serialize_portfolio_positions(db, _load_positions(db))
 
 
@@ -335,6 +398,7 @@ def update_portfolio_position(position_id: int, payload: PortfolioPositionUpdate
     if payload.notes is not None:
         position.notes = payload.notes
     db.commit()
+    _rebuild_existing_portfolio_snapshots(db)
     return _serialize_portfolio_positions(db, _load_positions(db))
 
 
@@ -348,6 +412,7 @@ def delete_portfolio_position(position_id: int, db: Session = Depends(get_db)):
 
     db.delete(position)
     db.commit()
+    _rebuild_existing_portfolio_snapshots(db)
     return _serialize_portfolio_positions(db, _load_positions(db))
 
 
@@ -400,4 +465,5 @@ def import_portfolio_positions(payload: PortfolioImportRequest, db: Session = De
             )
         )
     db.commit()
+    _rebuild_existing_portfolio_snapshots(db)
     return _serialize_portfolio_positions(db, _load_positions(db))
