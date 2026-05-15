@@ -46,6 +46,7 @@ This checklist covers forward-only portfolio market value history based on store
 - [x] Move the chart to the top section of the portfolio page.
 - [x] Add Chart/Table tabs for portfolio market value history.
 - [x] Add sortable daily snapshot table with date, market value, cost basis, day change, and day change percent.
+- [x] Add period-aware table aggregation for weekly and monthly range views.
 - [x] Add grouped holdings sorting that preserves Cash/Equity/ETF/Option sections.
 
 **Phase 3 Tests**
@@ -53,6 +54,7 @@ This checklist covers forward-only portfolio market value history based on store
 - [x] Review: wording avoids true-performance claims.
 - [x] Integration: snapshot API returns inferred baseline without affecting real-only summary cards.
 - [x] Review: daily table uses complete real snapshots and the selected visible range.
+- [x] Review: table period rows use the last complete snapshot in each week/month and compare against the previous period row.
 - [x] Review: holdings sort keeps subtotal rows pinned and sorts only within each asset group.
 
 **Commit / Push Gate**

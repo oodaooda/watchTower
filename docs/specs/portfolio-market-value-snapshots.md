@@ -12,7 +12,7 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
 - Optional historical snapshot rebuild from complete backfilled EOD dates using the current saved holdings definition
 - Snapshot history API with daily/monthly/yearly change summaries
 - Portfolio UI chart/cards for market value history
-- Portfolio UI table view for daily snapshot rows, including market value, cost basis, day change, and day change percent
+- Portfolio UI table view for daily or period snapshot rows, including market value, cost basis, period change, and period change percent
 - Grouped holdings table sorting within each asset-type section
 - Scheduler integration after EOD asset price refresh
 
@@ -37,7 +37,10 @@ Track forward-only daily portfolio market value using stored end-of-day closes, 
 - UI labels should say `Portfolio Market Value` or `Market Value Change`, not `Performance`.
 - Period summary cards should ignore the inferred baseline and use only real EOD snapshots.
 - The snapshot table should follow the same visible range as the chart and use complete real snapshots only.
-- Daily table change values should compare each snapshot's market value against the previous complete real snapshot.
+- The chart should continue to render daily complete snapshots.
+- The table should roll rows up by the selected range: weekly rows for `1W`, monthly rows for `1M`, `3M`, and `1Y`, and daily rows for `YTD` and `MAX`.
+- Period table rows should use the last available complete snapshot in that period.
+- Daily, weekly, and monthly table change values should compare each row's market value against the previous complete row for the same aggregation level.
 - Holdings sorting should keep asset-type groups separate and sort rows only within their current group.
 
 ## Core Contract
@@ -73,13 +76,13 @@ History response should include:
 The portfolio market value history surface should provide:
 
 - `Chart` and `Table` tabs using the same snapshot dataset and selected range.
-- A daily table with sortable headers:
+- A table with sortable headers:
   - `Date`
   - `Market Value`
   - `Cost Basis`
-  - `Day Change`
-  - `Day Change %`
-- Day change cells should be colored consistently with gain/loss conventions.
+  - daily, weekly, or monthly change
+  - daily, weekly, or monthly change percent
+- Change cells should be colored consistently with gain/loss conventions.
 - Holdings table headers should be sortable while preserving asset-type grouping; subtotal rows remain pinned above each group.
 
 ## Acceptance Shape
@@ -90,6 +93,6 @@ V1 is successful when:
 - the system can backfill current portfolio holdings' price history from Alpha Vantage without aborting on a single symbol failure
 - the system can rebuild reconstructed snapshot rows from complete backfilled EOD dates
 - the endpoint returns snapshot history and period changes
-- the portfolio page shows a market value chart, daily table view, and change cards
+- the portfolio page shows a market value chart, period-aware table view, and change cards
 - the portfolio grouped holdings table can sort rows within Cash, Equity, ETF, and Option sections independently
 - all wording avoids implying true portfolio performance

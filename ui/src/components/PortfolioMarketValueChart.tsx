@@ -18,6 +18,7 @@ type ChartRangeKey = "1w" | "1m" | "3m" | "ytd" | "1y" | "max";
 type ViewMode = "chart" | "table";
 type SortDirection = "asc" | "desc";
 type SnapshotTableSortKey = "date" | "marketValue" | "costBasis" | "dayChange" | "dayChangePct";
+type TableAggregation = "daily" | "weekly" | "monthly";
 
 const RANGE_OPTIONS: Array<{ key: ChartRangeKey; label: string }> = [
   { key: "1w", label: "1W" },
@@ -49,6 +50,11 @@ type ChartPoint = {
   source: string;
 };
 
+type SnapshotTablePoint = ChartPoint & {
+  periodKey: string;
+  periodLabel: string;
+};
+
 function fmtCurrency(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -78,6 +84,69 @@ function fmtDate(value?: number | string | null) {
     day: "numeric",
     year: "numeric",
   }).format(date);
+}
+
+function fmtMonth(value: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function getLocalDate(value: string) {
+  return new Date(`${value}T00:00:00`);
+}
+
+function getWeekStart(date: Date) {
+  const start = new Date(date);
+  const day = start.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  start.setDate(start.getDate() - daysSinceMonday);
+  return start;
+}
+
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function tableAggregationForRange(range: ChartRangeKey): TableAggregation {
+  if (range === "1w") return "weekly";
+  if (range === "1m" || range === "3m" || range === "1y") return "monthly";
+  return "daily";
+}
+
+function periodDetails(point: ChartPoint, aggregation: TableAggregation) {
+  const date = getLocalDate(point.snapshotDate);
+  if (aggregation === "weekly") {
+    const weekStart = getWeekStart(date);
+    return {
+      key: `week-${toIsoDate(weekStart)}`,
+      label: `Week of ${fmtDate(toIsoDate(weekStart))}`,
+    };
+  }
+  if (aggregation === "monthly") {
+    return {
+      key: `month-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      label: fmtMonth(date.getTime()),
+    };
+  }
+  return {
+    key: point.snapshotDate,
+    label: fmtDate(point.snapshotDate),
+  };
+}
+
+function changeLabelsForAggregation(aggregation: TableAggregation) {
+  if (aggregation === "weekly") {
+    return { change: "Week Change", changePct: "Week Change %" };
+  }
+  if (aggregation === "monthly") {
+    return { change: "Month Change", changePct: "Month Change %" };
+  }
+  return { change: "Day Change", changePct: "Day Change %" };
 }
 
 function PortfolioValueTooltip({ active, payload }: { active?: boolean; payload?: Array<{ dataKey?: string; value?: number; payload?: ChartPoint }> }) {
@@ -128,6 +197,8 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
   const [viewMode, setViewMode] = useState<ViewMode>("chart");
   const [tableSortKey, setTableSortKey] = useState<SnapshotTableSortKey>("date");
   const [tableSortDirection, setTableSortDirection] = useState<SortDirection>("desc");
+  const tableAggregation = tableAggregationForRange(selectedRange);
+  const tableChangeLabels = changeLabelsForAggregation(tableAggregation);
   const visibleSnapshots = useMemo(
     () =>
       snapshots.filter((snapshot) => {
@@ -188,13 +259,51 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
       });
     return rows;
   }, [visibleSnapshots]);
+  const allTableRows = useMemo(() => {
+    if (tableAggregation === "daily") {
+      return allCompleteTableRows.map((point) => ({
+        ...point,
+        periodKey: point.snapshotDate,
+        periodLabel: fmtDate(point.snapshotDate),
+      }));
+    }
+
+    const latestPointByPeriod = new Map<string, SnapshotTablePoint>();
+    allCompleteTableRows.forEach((point) => {
+      const period = periodDetails(point, tableAggregation);
+      const existing = latestPointByPeriod.get(period.key);
+      if (!existing || point.ts > existing.ts) {
+        latestPointByPeriod.set(period.key, {
+          ...point,
+          periodKey: period.key,
+          periodLabel: period.label,
+        });
+      }
+    });
+
+    const periodRows = [...latestPointByPeriod.values()].sort((a, b) => a.ts - b.ts);
+    return periodRows.map((point, index) => {
+      const previous = index > 0 ? periodRows[index - 1] : undefined;
+      const dayChange = previous ? point.marketValue - previous.marketValue : null;
+      const dayChangePct = previous && previous.marketValue !== 0 ? (point.marketValue - previous.marketValue) / previous.marketValue : null;
+      return {
+        ...point,
+        dayChange,
+        dayChangePct,
+      };
+    });
+  }, [allCompleteTableRows, tableAggregation]);
   const chartData = useMemo(
     () => allCompleteTableRows.filter((snapshot) => snapshot.ts >= rangeStart),
     [allCompleteTableRows, rangeStart],
   );
+  const tableData = useMemo(
+    () => allTableRows.filter((snapshot) => snapshot.ts >= rangeStart),
+    [allTableRows, rangeStart],
+  );
   const sortedTableData = useMemo(() => {
     const direction = tableSortDirection === "asc" ? 1 : -1;
-    return [...chartData].sort((a, b) => {
+    return [...tableData].sort((a, b) => {
       const aValue = tableSortKey === "date" ? a.ts : a[tableSortKey];
       const bValue = tableSortKey === "date" ? b.ts : b[tableSortKey];
       if (aValue === null || aValue === undefined) return 1;
@@ -203,7 +312,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
       if (aValue > bValue) return 1 * direction;
       return b.ts - a.ts;
     });
-  }, [chartData, tableSortDirection, tableSortKey]);
+  }, [tableData, tableSortDirection, tableSortKey]);
 
   const latestSnapshot = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
   const incompleteCount = snapshots.filter((snapshot) => !snapshot.is_complete).length;
@@ -351,6 +460,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
           <span>Priced positions: {latestSnapshot.priced_positions}</span>
           <span>Unpriced positions: {latestSnapshot.unpriced_positions}</span>
           <span>Visible range: {visibleRangeLabel}</span>
+          {viewMode === "table" ? <span>Table rows: {tableAggregation}</span> : null}
         </div>
       ) : null}
 
@@ -374,14 +484,14 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
                 {tableHeader("date", "Date", "left")}
                 {tableHeader("marketValue", "Market Value")}
                 {tableHeader("costBasis", "Cost Basis")}
-                {tableHeader("dayChange", "Day Change")}
-                {tableHeader("dayChangePct", "Day Change %")}
+                {tableHeader("dayChange", tableChangeLabels.change)}
+                {tableHeader("dayChangePct", tableChangeLabels.changePct)}
               </tr>
             </thead>
             <tbody>
               {sortedTableData.map((point) => (
-                <tr key={point.snapshotDate} className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40">
-                  <td className="px-3 py-3 font-medium">{fmtDate(point.snapshotDate)}</td>
+                <tr key={point.periodKey} className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40">
+                  <td className="px-3 py-3 font-medium">{point.periodLabel}</td>
                   <td className="px-3 py-3 text-right">{fmtCurrency(point.marketValue)}</td>
                   <td className="px-3 py-3 text-right">{fmtCurrency(point.costBasis)}</td>
                   <td className={`px-3 py-3 text-right ${point.dayChange && point.dayChange > 0 ? "text-emerald-500" : point.dayChange && point.dayChange < 0 ? "text-red-500" : ""}`}>
