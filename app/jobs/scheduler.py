@@ -40,7 +40,7 @@ from app.services.price_history import (
     complete_portfolio_price_dates,
     sync_tracked_assets_daily_history,
 )
-from app.services.signals.jobs import run_m1_hy_oas
+from app.services.signals.jobs import RUNNERS, run_m1_hy_oas
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +130,41 @@ def register_signal_jobs(sched: BackgroundScheduler) -> None:
         id="signals_m1_hy_oas",
         replace_existing=True,
     )
+    sched.add_job(
+        lambda: _run_signal_job("M2"),
+        CronTrigger(hour=18, minute=20, day_of_week="mon-fri"),
+        id="signals_m2_real_yield",
+        replace_existing=True,
+    )
+    sched.add_job(
+        lambda: _run_signal_job("E1"),
+        CronTrigger(minute="*/15"),
+        id="signals_e1_news_sentiment",
+        replace_existing=True,
+    )
+    sched.add_job(
+        lambda: _run_signal_job("G1"),
+        CronTrigger(minute="*/5"),
+        id="signals_g1_polymarket_taiwan",
+        replace_existing=True,
+    )
+
+
+def _run_signal_job(module_id: str) -> None:
+    log.info("[jobs] signal_job start module_id=%s", module_id)
+    db = SessionLocal()
+    try:
+        runner = RUNNERS[module_id]
+        result = runner(db)
+        log.info(
+            "[jobs] signal_job done module_id=%s status=%s records_written=%s error=%s",
+            module_id,
+            result.status,
+            result.records_written,
+            result.error,
+        )
+    finally:
+        db.close()
 
 
 # -----------------------------
@@ -240,3 +275,12 @@ def run_prices_now():
 def run_signal_m1_now():
     signal_m1_hy_oas_job()
     return {"ok": True}
+
+
+@dev_router.post("/run/signals/{module_id}")
+def run_signal_module_now(module_id: str):
+    normalized = module_id.upper()
+    if normalized not in RUNNERS:
+        raise HTTPException(404, "signal module not implemented")
+    _run_signal_job(normalized)
+    return {"ok": True, "module_id": normalized}

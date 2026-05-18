@@ -13,7 +13,7 @@ class SignalFetchError(RuntimeError):
     pass
 
 
-def get_json(url: str, *, timeout: float = 15.0, retries: int = 2, headers: dict[str, str] | None = None) -> dict[str, Any]:
+def get_json(url: str, *, timeout: float = 15.0, retries: int = 2, headers: dict[str, str] | None = None) -> Any:
     last_error: Exception | None = None
     for attempt in range(retries + 1):
         try:
@@ -21,8 +21,6 @@ def get_json(url: str, *, timeout: float = 15.0, retries: int = 2, headers: dict
                 response = client.get(url)
                 response.raise_for_status()
                 payload = response.json()
-                if not isinstance(payload, dict):
-                    raise SignalFetchError("JSON response was not an object")
                 return payload
         except Exception as exc:
             last_error = exc

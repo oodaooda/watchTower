@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.models import Signal, SignalEvent, SignalIngestRun, SignalModuleState
-from app.services.signals.modules.m1_hy_oas import MODULE_ID as M1_MODULE_ID, fetch_observations
+from app.services.signals.modules.e1_news_sentiment import MODULE_ID as E1_MODULE_ID, fetch_observations as fetch_e1
+from app.services.signals.modules.g1_polymarket_taiwan import MODULE_ID as G1_MODULE_ID, fetch_observations as fetch_g1
+from app.services.signals.modules.m1_hy_oas import MODULE_ID as M1_MODULE_ID, fetch_observations as fetch_m1
+from app.services.signals.modules.m2_real_yield import MODULE_ID as M2_MODULE_ID, fetch_observations as fetch_m2
 from app.services.signals.sse import broadcaster
 from app.services.signals.types import SignalObservation, SignalRunResult
 from app.services.signals.zscore import z_score
@@ -143,4 +146,24 @@ def run_signal_module(
 
 
 def run_m1_hy_oas(db: Session) -> SignalRunResult:
-    return run_signal_module(db, module_id=M1_MODULE_ID, fetch=fetch_observations)
+    return run_signal_module(db, module_id=M1_MODULE_ID, fetch=fetch_m1)
+
+
+def run_m2_real_yield(db: Session) -> SignalRunResult:
+    return run_signal_module(db, module_id=M2_MODULE_ID, fetch=fetch_m2)
+
+
+def run_e1_news_sentiment(db: Session) -> SignalRunResult:
+    return run_signal_module(db, module_id=E1_MODULE_ID, fetch=fetch_e1)
+
+
+def run_g1_polymarket_taiwan(db: Session) -> SignalRunResult:
+    return run_signal_module(db, module_id=G1_MODULE_ID, fetch=fetch_g1)
+
+
+RUNNERS = {
+    M1_MODULE_ID: run_m1_hy_oas,
+    M2_MODULE_ID: run_m2_real_yield,
+    E1_MODULE_ID: run_e1_news_sentiment,
+    G1_MODULE_ID: run_g1_polymarket_taiwan,
+}

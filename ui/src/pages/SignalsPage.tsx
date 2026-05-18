@@ -217,15 +217,15 @@ const initialTiles: SignalTile[] = [
     id: "G1",
     group: "Geopolitical",
     title: "Taiwan <2027 Market",
-    value: "12.8",
+    value: "--",
     unit: "%",
-    zScore: 2.7,
-    status: "red",
+    zScore: null,
+    status: "grey",
     source: "Polymarket",
-    age: "18s",
+    age: "config",
     cadence: "5m",
-    delta: "+3.1%",
-    sparkline: [4.1, 4.3, 4.7, 5.2, 6.4, 7.9, 9.8, 11.1, 12.8],
+    delta: "market id needed",
+    sparkline: [0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   {
     id: "G2",
@@ -323,18 +323,25 @@ function formatAge(ts: string) {
   return `${Math.floor(hours / 24)}d`;
 }
 
+function formatSignalValue(signal: SignalApiItem) {
+  if (signal.moduleId === "M1") return signal.value.toFixed(0);
+  if (signal.moduleId === "M2") return signal.value.toFixed(2);
+  if (signal.moduleId === "E1") return `${signal.value > 0 ? "+" : ""}${signal.value.toFixed(2)}`;
+  if (signal.moduleId === "G1") return signal.value.toFixed(1);
+  return signal.value.toFixed(2);
+}
+
 function applySignalToTiles(current: SignalTile[], signal: SignalApiItem, historyValues?: number[]) {
-  if (signal.moduleId !== "M1") return current;
   return current.map((tile) =>
-    tile.id === "M1"
+    tile.id === signal.moduleId
       ? {
           ...tile,
-          value: signal.value.toFixed(0),
+          value: formatSignalValue(signal),
           zScore: signal.zScore,
           status: signal.status,
           source: signal.source,
           age: formatAge(signal.ts),
-          delta: "live FRED",
+          delta: "live source",
           sparkline: historyValues?.length ? historyValues : tile.sparkline,
         }
       : tile,
@@ -351,6 +358,7 @@ function parseSseMessage(message: string) {
 
 function SignalTileCard({ tile }: { tile: SignalTile }) {
   const styles = statusStyles[tile.status];
+  const footerAge = tile.age === "config" ? "configuration required" : `${tile.age} ago`;
   return (
     <button
       type="button"
@@ -391,7 +399,7 @@ function SignalTileCard({ tile }: { tile: SignalTile }) {
       </svg>
 
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-zinc-800 pt-2 font-mono text-[11px] text-zinc-500">
-        <span className="truncate">{tile.source} | {tile.age} ago</span>
+        <span className="truncate">{tile.source} | {footerAge}</span>
         <span className="text-sky-300 opacity-80 group-hover:opacity-100">expand -&gt;</span>
       </div>
     </button>
@@ -429,11 +437,12 @@ export default function SignalsPage() {
         if (!historyResponse.ok) throw new Error(`history ${historyResponse.status}`);
         const latest = await latestResponse.json();
         const history = await historyResponse.json();
-        const m1 = latest.signals?.find((item: SignalApiItem) => item.moduleId === "M1");
         const historyValues = (history.signals ?? []).map((item: SignalApiItem) => item.value).slice(-12);
-        if (m1) {
-          setTiles((current) => applySignalToTiles(current, m1, historyValues));
-        }
+        setTiles((current) =>
+          (latest.signals ?? []).reduce((bucket: SignalTile[], item: SignalApiItem) => {
+            return applySignalToTiles(bucket, item, item.moduleId === "M1" ? historyValues : undefined);
+          }, current),
+        );
       } catch (error) {
         if (!controller.signal.aborted) {
           setLoadError(error instanceof Error ? error.message : "failed to load Signals");

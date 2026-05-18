@@ -53,26 +53,29 @@ This checklist covers the native WatchTower Signals module: a real-time monitori
 
 ## Phase 2 - Core Pattern Coverage
 
-- [ ] Add M2 10Y Real Yield from FRED.
-- [ ] Add E1 News Sentiment Top 5 from Alpha Vantage.
-- [ ] Add G1 Polymarket Taiwan with pinned market config.
-- [ ] Add module docs for M1, M2, E1, and G1.
-- [ ] Expand assistant context to include red/amber summaries and top changes.
-- [ ] Add stale/grey status behavior for failed or delayed modules.
+- [x] Add M2 10Y Real Yield from FRED.
+- [x] Add E1 News Sentiment Top 5 from Alpha Vantage.
+- [x] Add G1 Polymarket Taiwan with required pinned market config.
+- [ ] Prompt owner to set and validate `POLYMARKET_TAIWAN_MARKET_ID` before treating G1 as live.
+- [x] Add module docs for M1, M2, E1, and G1.
+- [x] Expand assistant context to include red/amber summaries and top changes.
+- [x] Add stale/grey status behavior for failed or delayed modules.
 
 **Phase 2 Tests**
-- [ ] Unit: M2 transform.
-- [ ] Unit: E1 transform and top-five selection.
-- [ ] Unit: G1 transform and pinned market selection.
-- [ ] Unit: stale module status calculation.
-- [ ] Integration: each module writes idempotent rows.
-- [ ] Manual smoke: four live tiles render with documented cadence.
+- [x] Unit: M2 transform.
+- [x] Unit: E1 transform and top-five selection.
+- [x] Unit: G1 transform and pinned market selection.
+- [x] Unit: G1 fails closed when no pinned market id is configured.
+- [x] Unit: stale module status calculation.
+- [x] Integration: each module writes idempotent rows.
+- [x] Manual smoke: M1, M2, and E1 live tiles render with documented cadence.
+- [ ] Manual smoke: G1 live tile renders after `POLYMARKET_TAIWAN_MARKET_ID` is validated.
 
 **Commit / Push Gate**
-- [ ] Tests pass.
-- [ ] Module docs are updated.
-- [ ] Commit after four-tile wall works.
-- [ ] Push after review.
+- [x] Tests pass.
+- [x] Module docs are updated.
+- [x] Commit after Phase 2 core modules work and G1 is safely config-gated.
+- [x] Push after review.
 
 ## Phase 3 - Portfolio Goal and VGT Exposure
 

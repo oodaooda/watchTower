@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_admin_token, require_api_key
 from app.core.db import get_db
-from app.services.signals.jobs import run_m1_hy_oas
+from app.services.signals.jobs import RUNNERS
 from app.services.signals.queries import assistant_context, latest_signals, replay_events, serialize_signal, signal_history
 from app.services.signals.sse import broadcaster, encode_sse
 
@@ -38,6 +38,9 @@ def get_catalog(authorization: str | None = Header(default=None), db: Session = 
     return {
         "modules": [
             {"moduleId": "M1", "title": "HY OAS", "source": "FRED", "cadence": "daily", "metric": "hy_oas_bps"},
+            {"moduleId": "M2", "title": "10Y Real Yield", "source": "FRED", "cadence": "daily", "metric": "real_yield_10y_pct"},
+            {"moduleId": "E1", "title": "News Sentiment Top 5", "source": "Alpha Vantage", "cadence": "15m RTH", "metric": "news_sentiment_top5"},
+            {"moduleId": "G1", "title": "Polymarket Taiwan", "source": "Polymarket", "cadence": "5m", "metric": "taiwan_probability_pct"},
         ]
     }
 
@@ -66,9 +69,10 @@ def run_ingest_module(
     db: Session = Depends(get_db),
 ):
     require_admin_token(authorization)
-    if module_id.upper() != "M1":
+    runner = RUNNERS.get(module_id.upper())
+    if not runner:
         return {"moduleId": module_id.upper(), "status": "fail", "recordsWritten": 0, "error": "module not implemented"}
-    result = run_m1_hy_oas(db)
+    result = runner(db)
     return {
         "moduleId": result.module_id,
         "status": result.status,
