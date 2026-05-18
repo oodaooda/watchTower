@@ -26,3 +26,7 @@ Detailed implementation tasks belong in milestone checklist files under `docs/mi
   - Spec: `../specs/portfolio-market-value-snapshots.md`
   - Checklist: `M005_portfolio-market-value-snapshots-checklist.md`
   - Current focus: forward-only daily portfolio market value snapshots from stored EOD closes
+- `M006` - WatchTower Signals (`planned`)
+  - Spec: `../specs/signals.md`
+  - Checklist: `M006_signals-checklist.md`
+  - Current focus: native WatchTower monitoring wall with assistant-readable Signals context and VGT/`$1M` goal tracking

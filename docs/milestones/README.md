@@ -12,5 +12,6 @@ Use this folder for roadmap and phase-tracking documents.
 
 - `roadmap.md`: high-level milestone index
 - `M001_earnings-call-transcripts-checklist.md`: detailed checklist for transcript feature rollout
+- `M006_signals-checklist.md`: detailed checklist for Signals rollout
 
 When a phase becomes large enough to need its own closeout or retrospective, add a dedicated file here and link it from `roadmap.md`.
