@@ -23,33 +23,33 @@ This checklist covers the native WatchTower Signals module: a real-time monitori
 
 ## Phase 1 - Native Backbone and M1
 
-- [ ] Add Alembic migration for Signals tables.
-- [ ] Add SQLAlchemy models and Pydantic schemas.
-- [ ] Add shared auth helper based on existing `wt_` API key validation.
-- [ ] Add `app/routers/signals.py`.
-- [ ] Add read-only assistant context endpoint.
-- [ ] Add shared Signals fetcher with timeout, retry, rate-limit guard, and source validation.
-- [ ] Add M1 HY OAS FRED ingest module.
-- [ ] Add APScheduler registration for Signals jobs.
-- [ ] Add manual M1 run endpoint.
-- [ ] Add SSE endpoint with replay from `signal_events`.
-- [ ] Wire `/signals` to real M1 latest/history/stream data.
+- [x] Add Alembic migration for Signals tables.
+- [x] Add SQLAlchemy models and Pydantic schemas.
+- [x] Add shared auth helper based on existing `wt_` API key validation.
+- [x] Add `app/routers/signals.py`.
+- [x] Add read-only assistant context endpoint.
+- [x] Add shared Signals fetcher with timeout, retry, rate-limit guard, and source validation.
+- [x] Add M1 HY OAS FRED ingest module.
+- [x] Add APScheduler registration for Signals jobs.
+- [x] Add manual M1 run endpoint.
+- [x] Add SSE endpoint with replay from `signal_events`.
+- [x] Wire `/signals` to real M1 latest/history/stream data.
 
 **Phase 1 Tests**
-- [ ] Unit: M1 FRED transform handles valid observations and missing `"."` values.
-- [ ] Unit: Z-score calculation uses named input/output fixtures.
-- [ ] Unit: shared auth accepts active `wt_` key and rejects revoked/invalid keys.
-- [ ] Integration: migration runs cleanly on a fresh database.
-- [ ] Integration: manual M1 run writes idempotent signal rows and ingest run rows.
-- [ ] Integration: SSE replay honors `Last-Event-ID`.
-- [ ] Manual smoke: `/signals` shows real HY OAS and updates after manual ingest.
-- [ ] Manual smoke: `/signals/assistant/context` returns M1 state with source fields.
+- [x] Unit: M1 FRED transform handles valid observations and missing `"."` values.
+- [x] Unit: Z-score calculation uses named input/output fixtures.
+- [x] Unit: shared auth accepts active `wt_` key and rejects revoked/invalid keys.
+- [x] Integration: migration runs cleanly on a fresh database.
+- [x] Integration: manual M1 run writes idempotent signal rows and ingest run rows.
+- [x] Integration: SSE replay honors `Last-Event-ID`.
+- [x] Manual smoke: `/signals` shows real HY OAS and updates after manual ingest.
+- [x] Manual smoke: `/signals/assistant/context` returns M1 state with source fields.
 
 **Commit / Push Gate**
-- [ ] Backend tests pass.
-- [ ] Frontend build passes.
-- [ ] Commit after M1 end-to-end smoke succeeds.
-- [ ] Push after review.
+- [x] Backend tests pass.
+- [x] Frontend build passes.
+- [x] Commit after M1 end-to-end smoke succeeds.
+- [x] Push after review.
 
 ## Phase 2 - Core Pattern Coverage
 

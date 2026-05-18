@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     Index,
+    JSON,
     Column,
     PrimaryKeyConstraint,    
     )
@@ -486,6 +487,109 @@ class PortfolioSnapshotDaily(Base):
     source: Mapped[str] = mapped_column(String, nullable=False, default="asset_price_daily", server_default="asset_price_daily")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class Signal(Base):
+    __tablename__ = "signals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), nullable=False, index=True)
+    module_id = Column(String, nullable=False, index=True)
+    entity = Column(String, nullable=False, default="", server_default="")
+    metric = Column(String, nullable=False)
+    value = Column(Float, nullable=False)
+    z_score = Column(Float, nullable=True)
+    status = Column(String, nullable=False, default="grey", server_default="grey")
+    source = Column(String, nullable=False)
+    raw_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("module_id", "ts", "metric", "entity", name="uq_signals_module_ts_metric_entity"),
+        Index("ix_signals_module_ts", "module_id", "ts"),
+        Index("ix_signals_metric_entity_ts", "metric", "entity", "ts"),
+    )
+
+
+class SignalEvent(Base):
+    __tablename__ = "signal_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    module_id = Column(String, nullable=False, index=True)
+    signal_id = Column(Integer, ForeignKey("signals.id", ondelete="CASCADE"), nullable=True)
+    payload = Column(JSON, nullable=False)
+
+    __table_args__ = (
+        Index("ix_signal_events_ts", "ts"),
+    )
+
+
+class SignalIngestRun(Base):
+    __tablename__ = "signal_ingest_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    module_id = Column(String, nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String, nullable=True)
+    error = Column(String, nullable=True)
+    records_written = Column(Integer, nullable=False, default=0, server_default="0")
+
+
+class SignalModuleState(Base):
+    __tablename__ = "signal_module_state"
+
+    module_id = Column(String, primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    config = Column(JSON, nullable=False, default=dict, server_default="{}")
+    last_success_at = Column(DateTime(timezone=True), nullable=True)
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_status = Column(String, nullable=True)
+    last_error = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class SignalAlert(Base):
+    __tablename__ = "signal_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    module_id = Column(String, nullable=False, index=True)
+    severity = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_reason = Column(String, nullable=True)
+    state_snapshot = Column(JSON, nullable=True)
+
+
+class SignalLayout(Base):
+    __tablename__ = "signal_layouts"
+
+    key_hash = Column(String, primary_key=True)
+    config = Column(JSON, nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class SignalGoalSnapshot(Base):
+    __tablename__ = "signal_goal_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    goal_name = Column(String, nullable=False, default="portfolio_1m", server_default="portfolio_1m")
+    current_value = Column(Numeric(20, 4), nullable=False)
+    target_value = Column(Numeric(20, 4), nullable=False)
+    distance_to_goal = Column(Numeric(20, 4), nullable=False)
+    velocity_30d = Column(Numeric(20, 4), nullable=True)
+    velocity_90d = Column(Numeric(20, 4), nullable=True)
+    required_monthly_gain = Column(Numeric(20, 4), nullable=True)
+    source = Column(String, nullable=False)
+    raw_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_signal_goal_snapshots_goal_ts", "goal_name", "ts"),
+    )
 
 
 class CompanyRiskMetric(Base):

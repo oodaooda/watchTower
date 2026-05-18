@@ -32,6 +32,9 @@ class Settings(BaseSettings):
 
     # External services
     alpha_vantage_api_key: str | None = Field(default=None, alias="ALPHA_VANTAGE_API_KEY")
+    fred_api_key: str | None = Field(default=None, alias="FRED_API_KEY")
+    signals_enabled: bool = Field(default=True, alias="SIGNALS_ENABLED")
+    signals_poll_seconds: int = Field(default=60, alias="SIGNALS_POLL_SECONDS")
     sec_user_agent: str = Field(
         "watchTower/0.1 (contact@example.com)", alias="SEC_USER_AGENT"
     )

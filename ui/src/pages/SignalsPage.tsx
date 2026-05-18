@@ -1,3 +1,6 @@
+import { useEffect, useMemo, useState } from "react";
+import { API_BASE } from "../lib/api";
+
 type SignalStatus = "green" | "amber" | "red" | "grey";
 
 type SignalTile = {
@@ -15,7 +18,19 @@ type SignalTile = {
   sparkline: number[];
 };
 
-const tiles: SignalTile[] = [
+type SignalApiItem = {
+  ts: string;
+  moduleId: string;
+  metric: string;
+  value: number;
+  zScore: number | null;
+  status: SignalStatus;
+  source: string;
+};
+
+const SIGNALS_TOKEN_KEY = "watchtower_signals_token";
+
+const initialTiles: SignalTile[] = [
   {
     id: "P1",
     group: "Portfolio Goal",
@@ -296,6 +311,44 @@ function formatZScore(value: number | null) {
   return `Z: ${value > 0 ? "+" : ""}${value.toFixed(1)} (1Y)`;
 }
 
+function formatAge(ts: string) {
+  const then = new Date(ts).getTime();
+  if (Number.isNaN(then)) return "--";
+  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function applySignalToTiles(current: SignalTile[], signal: SignalApiItem, historyValues?: number[]) {
+  if (signal.moduleId !== "M1") return current;
+  return current.map((tile) =>
+    tile.id === "M1"
+      ? {
+          ...tile,
+          value: signal.value.toFixed(0),
+          zScore: signal.zScore,
+          status: signal.status,
+          source: signal.source,
+          age: formatAge(signal.ts),
+          delta: "live FRED",
+          sparkline: historyValues?.length ? historyValues : tile.sparkline,
+        }
+      : tile,
+  );
+}
+
+function parseSseMessage(message: string) {
+  const lines = message.split("\n");
+  const event = lines.find((line) => line.startsWith("event:"))?.replace("event:", "").trim();
+  const data = lines.find((line) => line.startsWith("data:"))?.replace("data:", "").trim();
+  if (!event || !data) return null;
+  return { event, data };
+}
+
 function SignalTileCard({ tile }: { tile: SignalTile }) {
   const styles = statusStyles[tile.status];
   return (
@@ -346,7 +399,93 @@ function SignalTileCard({ tile }: { tile: SignalTile }) {
 }
 
 export default function SignalsPage() {
-  const stressedCount = tiles.filter((tile) => tile.status === "red" || tile.status === "amber").length;
+  const [tiles, setTiles] = useState<SignalTile[]>(initialTiles);
+  const [tokenInput, setTokenInput] = useState("");
+  const [signalsToken, setSignalsToken] = useState("");
+  const [streamState, setStreamState] = useState("offline");
+  const [lastEvent, setLastEvent] = useState("--");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const stressedCount = useMemo(() => tiles.filter((tile) => tile.status === "red" || tile.status === "amber").length, [tiles]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(SIGNALS_TOKEN_KEY) || "";
+    setSignalsToken(stored);
+    setTokenInput(stored);
+  }, []);
+
+  useEffect(() => {
+    if (!signalsToken) return;
+    const controller = new AbortController();
+
+    async function loadInitial() {
+      try {
+        setLoadError(null);
+        const headers = { Authorization: `Bearer ${signalsToken}` };
+        const [latestResponse, historyResponse] = await Promise.all([
+          fetch(`${API_BASE}/signals/latest`, { headers, signal: controller.signal }),
+          fetch(`${API_BASE}/signals/history?module_id=M1&range=30d`, { headers, signal: controller.signal }),
+        ]);
+        if (!latestResponse.ok) throw new Error(`latest ${latestResponse.status}`);
+        if (!historyResponse.ok) throw new Error(`history ${historyResponse.status}`);
+        const latest = await latestResponse.json();
+        const history = await historyResponse.json();
+        const m1 = latest.signals?.find((item: SignalApiItem) => item.moduleId === "M1");
+        const historyValues = (history.signals ?? []).map((item: SignalApiItem) => item.value).slice(-12);
+        if (m1) {
+          setTiles((current) => applySignalToTiles(current, m1, historyValues));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLoadError(error instanceof Error ? error.message : "failed to load Signals");
+        }
+      }
+    }
+
+    async function connectStream() {
+      try {
+        setStreamState("connecting");
+        const response = await fetch(`${API_BASE}/signals/stream`, {
+          headers: { Authorization: `Bearer ${signalsToken}`, Accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) throw new Error(`stream ${response.status}`);
+        setStreamState("live");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const messages = buffer.split("\n\n");
+          buffer = messages.pop() ?? "";
+          messages.forEach((message) => {
+            const parsed = parseSseMessage(message);
+            if (!parsed || parsed.event !== "signal_update") return;
+            const data = JSON.parse(parsed.data) as SignalApiItem;
+            setLastEvent(data.moduleId);
+            setTiles((current) => applySignalToTiles(current, data));
+          });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setStreamState("offline");
+          setLoadError(error instanceof Error ? error.message : "stream failed");
+        }
+      }
+    }
+
+    loadInitial();
+    connectStream();
+    return () => controller.abort();
+  }, [signalsToken]);
+
+  const saveToken = () => {
+    const trimmed = tokenInput.trim();
+    localStorage.setItem(SIGNALS_TOKEN_KEY, trimmed);
+    setSignalsToken(trimmed);
+  };
+
   return (
     <div className="min-h-[calc(100vh-96px)] rounded-xl border border-zinc-800 bg-[#05070a] p-3 text-zinc-100 shadow-2xl shadow-black/40 md:p-4">
       <div className="mb-3 grid gap-3 xl:grid-cols-[1fr_360px]">
@@ -359,9 +498,22 @@ export default function SignalsPage() {
             <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
               <span className="rounded border border-red-400/30 bg-red-500/10 px-2.5 py-1.5 text-red-200">STRESSED</span>
               <span className="rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-zinc-300">{stressedCount} thresholds active</span>
-              <span className="rounded border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-emerald-200">SSE live</span>
+              <span className="rounded border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-emerald-200">SSE {streamState}</span>
               <span className="rounded border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-sky-200">assistant read-only</span>
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3 font-mono text-xs">
+            <input
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              type="password"
+              placeholder="Paste wt_ Signals key"
+              className="h-8 min-w-[260px] rounded border border-zinc-700 bg-black/30 px-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-sky-500 focus:outline-none"
+            />
+            <button type="button" onClick={saveToken} className="h-8 rounded border border-zinc-700 bg-zinc-900 px-3 text-xs text-zinc-200 hover:bg-zinc-800">
+              Save Token
+            </button>
+            {loadError ? <span className="text-red-300">{loadError}</span> : <span className="text-zinc-500">Static fallback until real Signals data is available.</span>}
           </div>
           <div className="mt-3 grid gap-2 font-mono text-xs text-zinc-400 md:grid-cols-5">
             <div className="rounded border border-zinc-800 bg-black/25 p-2">
@@ -370,7 +522,7 @@ export default function SignalsPage() {
             </div>
             <div className="rounded border border-zinc-800 bg-black/25 p-2">
               <div className="text-zinc-600">Stream</div>
-              <div className="mt-1 text-zinc-200">Last event #12346</div>
+              <div className="mt-1 text-zinc-200">Last event {lastEvent}</div>
             </div>
             <div className="rounded border border-zinc-800 bg-black/25 p-2">
               <div className="text-zinc-600">Coverage</div>

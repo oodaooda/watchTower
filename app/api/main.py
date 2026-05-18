@@ -25,6 +25,7 @@ from app.routers import (
     settings as settings_router,
     usage,
     transcripts,
+    signals,
 )
 from app.jobs.scheduler import start_scheduler, nightly_fundamentals_job, daily_prices_job, dev_router
 
@@ -103,6 +104,7 @@ app.include_router(openclaw.router)
 app.include_router(settings_router.router)
 app.include_router(usage.router)
 app.include_router(transcripts.router)
+app.include_router(signals.router)
 app.include_router(dev_router)
 
 # --- Versioned API (v1) ---
@@ -126,6 +128,7 @@ v1.include_router(openclaw.router)
 v1.include_router(settings_router.router)
 v1.include_router(usage.router)
 v1.include_router(transcripts.router)
+v1.include_router(signals.router)
 app.include_router(v1)
 
 

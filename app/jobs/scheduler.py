@@ -40,6 +40,7 @@ from app.services.price_history import (
     complete_portfolio_price_dates,
     sync_tracked_assets_daily_history,
 )
+from app.services.signals.jobs import run_m1_hy_oas
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +108,30 @@ def daily_prices_job() -> None:
         db.close()
 
 
+def signal_m1_hy_oas_job() -> None:
+    log.info("[jobs] signal_m1_hy_oas_job start")
+    db = SessionLocal()
+    try:
+        result = run_m1_hy_oas(db)
+        log.info(
+            "[jobs] signal_m1_hy_oas_job done status=%s records_written=%s error=%s",
+            result.status,
+            result.records_written,
+            result.error,
+        )
+    finally:
+        db.close()
+
+
+def register_signal_jobs(sched: BackgroundScheduler) -> None:
+    sched.add_job(
+        signal_m1_hy_oas_job,
+        CronTrigger(hour=18, minute=15, day_of_week="mon-fri"),
+        id="signals_m1_hy_oas",
+        replace_existing=True,
+    )
+
+
 # -----------------------------
 # Scheduler lifecycle
 # -----------------------------
@@ -141,6 +166,8 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
         id="daily_prices",
         replace_existing=True,
     )
+
+    register_signal_jobs(sched)
 
     sched.start()
     SCHED = sched
@@ -206,4 +233,10 @@ def run_nightly_now():
 @dev_router.post("/run/prices")
 def run_prices_now():
     daily_prices_job()
+    return {"ok": True}
+
+
+@dev_router.post("/run/signals/m1")
+def run_signal_m1_now():
+    signal_m1_hy_oas_job()
     return {"ok": True}
