@@ -17,6 +17,7 @@ from app.routers.portfolio import _load_positions as _load_portfolio_positions
 from app.routers.portfolio import _serialize_portfolio_positions
 from app.routers.prices import _get_company_news
 from app.services.portfolio_snapshots import load_portfolio_snapshots
+from app.services.signals.queries import assistant_context as _signals_assistant_context
 
 try:
     from openai import OpenAI
@@ -128,6 +129,24 @@ def _contains_portfolio_term(question: str) -> bool:
         " allocation ",
         " exposure ",
         " cost basis ",
+    )
+    return any(marker in q for marker in markers)
+
+
+def _contains_signals_term(question: str) -> bool:
+    q = f" {_normalized_question_text(question)} "
+    markers = (
+        " osint ",
+        " signal ",
+        " signals ",
+        " signal wall ",
+        " signals page ",
+        " macro signal ",
+        " macro signals ",
+        " market regime ",
+        " regime ",
+        " risk wall ",
+        " monitoring wall ",
     )
     return any(marker in q for marker in markers)
 
@@ -486,6 +505,110 @@ def _build_portfolio_answer(
         return "\n".join(lines)
 
     return ""
+
+
+SIGNAL_TITLES = {
+    "M1": "HY OAS",
+    "M2": "10Y real yield",
+    "E1": "News sentiment top 5",
+    "G1": "Polymarket Taiwan",
+}
+
+
+def _format_signal_value(signal: Dict[str, Any]) -> str:
+    value = signal.get("value")
+    module_id = str(signal.get("moduleId") or "")
+    if not isinstance(value, (int, float)):
+        return "--"
+    if module_id == "M1":
+        return f"{value:,.0f} bps"
+    if module_id in {"M2", "G1"}:
+        return f"{value:.2f}%"
+    if module_id == "E1":
+        return f"{value:+.2f}"
+    return f"{value:,.2f}"
+
+
+def _build_signals_answer(question: str, context: Dict[str, Any]) -> str:
+    regime = context.get("regime") if isinstance(context.get("regime"), dict) else {}
+    latest = context.get("latest") if isinstance(context.get("latest"), list) else []
+    module_states = context.get("moduleStates") if isinstance(context.get("moduleStates"), list) else []
+    stressed = context.get("stressed") if isinstance(context.get("stressed"), list) else []
+
+    lines = [f"Signals wall regime: {str(regime.get('label') or 'UNKNOWN')}."]
+    if latest:
+        lines.append("\nLatest OSINT signals:")
+        for signal in latest[:8]:
+            if not isinstance(signal, dict):
+                continue
+            module_id = str(signal.get("moduleId") or "")
+            title = SIGNAL_TITLES.get(module_id, module_id or "Signal")
+            status = str(signal.get("status") or "grey")
+            z_score = signal.get("zScore")
+            z_text = f", Z {z_score:+.1f}" if isinstance(z_score, (int, float)) else ""
+            source = signal.get("source") or "unknown source"
+            ts = signal.get("ts") or "unknown time"
+            lines.append(f"- {title}: {_format_signal_value(signal)} ({status}{z_text}) from {source}, as of {ts}.")
+    else:
+        lines.append("\nNo live Signals observations are available yet.")
+
+    if stressed:
+        lines.append("\nAmber/red contributors:")
+        for signal in stressed[:5]:
+            if not isinstance(signal, dict):
+                continue
+            module_id = str(signal.get("moduleId") or "")
+            title = SIGNAL_TITLES.get(module_id, module_id or "Signal")
+            lines.append(f"- {title}: {signal.get('status')} at {_format_signal_value(signal)}.")
+
+    unavailable = [
+        state
+        for state in module_states
+        if isinstance(state, dict)
+        and (state.get("configured") is False or state.get("healthStatus") in {"grey", "red"})
+    ]
+    if unavailable:
+        lines.append("\nModule health notes:")
+        for state in unavailable[:6]:
+            module_id = str(state.get("moduleId") or "")
+            title = SIGNAL_TITLES.get(module_id, module_id or "Signal")
+            health = state.get("healthStatus") or "unknown"
+            reason = state.get("lastError") or "no recent successful ingest"
+            lines.append(f"- {title}: {health}; {reason}.")
+
+    lines.append("\nUse this as monitoring context, not as a buy/sell or price-prediction signal.")
+    return "\n".join(lines)
+
+
+def _answer_signals_question(question: str, db: Session) -> QAResponse:
+    context = _signals_assistant_context(db)
+    citations = {"signals"}
+    for source in context.get("citations", []):
+        if isinstance(source, str) and source.strip():
+            citations.add(source.strip())
+    return QAResponse(
+        answer=_build_signals_answer(question, context),
+        citations=sorted(citations),
+        news=[],
+        data={
+            "plan": {
+                "actions": ["signals_context"],
+                "response_mode": "grounded",
+                "use_signals": True,
+            },
+            "queries": [],
+            "sources": sorted(citations),
+            "signals": context,
+            "source_tags": {
+                "what_data_shows": "signals",
+                "general_context": "signals",
+            },
+        },
+        trace=[
+            "Signals context applied.",
+            "Read-only Signals assistant context loaded from WatchTower.",
+        ],
+    )
 
 
 def _extract_ticker(question: str) -> Optional[str]:
@@ -2366,6 +2489,10 @@ def _answer_question(
     thread_id: Optional[str] = None,
     context_company: Optional[str] = None,
 ) -> QAResponse:
+    can_execute_sql = hasattr(db, "execute")
+    if can_execute_sql and _contains_signals_term(question):
+        return _answer_signals_question(question, db)
+
     plan = _build_plan(question)
     response_mode = plan.get("response_mode", "grounded")
     companies, unresolved, resolver_diagnostics = _resolve_companies_from_plan(db, question, plan)
@@ -2421,7 +2548,6 @@ def _answer_question(
                 }
             )
 
-    can_execute_sql = hasattr(db, "execute")
     allow_llm_render = can_execute_sql
 
     portfolio_positions: List[PortfolioPosition] = []

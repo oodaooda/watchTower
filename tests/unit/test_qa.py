@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.routers.qa import (
     _extract_ticker,
@@ -30,7 +30,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.core.db import Base
-from app.core.models import Company, EarningsCallTranscript, EarningsCallTranscriptSegment, FavoriteCompany, PortfolioPosition, PortfolioSnapshotDaily
+from app.core.models import (
+    Company,
+    EarningsCallTranscript,
+    EarningsCallTranscriptSegment,
+    FavoriteCompany,
+    PortfolioPosition,
+    PortfolioSnapshotDaily,
+    Signal,
+    SignalModuleState,
+)
 
 
 def test_extract_ticker_skips_common_words():
@@ -965,6 +974,68 @@ def test_answer_question_portfolio_summary_returns_mixed_holdings(monkeypatch):
         assert response.data["plan"]["use_portfolio"] is True
         assert response.data["plan"]["portfolio_total_positions"] == 2
         assert "portfolio_positions" in response.citations
+
+
+def test_answer_question_uses_signals_context_for_osint_question(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Signal(
+                    ts=datetime(2026, 5, 18, tzinfo=timezone.utc),
+                    module_id="M1",
+                    entity="",
+                    metric="hy_oas_bps",
+                    value=312.0,
+                    z_score=-0.4,
+                    status="green",
+                    source="FRED",
+                    raw_payload={"date": "2026-05-18"},
+                ),
+                Signal(
+                    ts=datetime(2026, 5, 18, tzinfo=timezone.utc),
+                    module_id="E1",
+                    entity="top5",
+                    metric="news_sentiment_top5",
+                    value=-0.18,
+                    z_score=-1.2,
+                    status="amber",
+                    source="Alpha Vantage",
+                    raw_payload={},
+                ),
+                SignalModuleState(
+                    module_id="M1",
+                    last_success_at=datetime(2026, 5, 18, tzinfo=timezone.utc),
+                    last_status="ok",
+                ),
+                SignalModuleState(
+                    module_id="E1",
+                    last_success_at=datetime(2026, 5, 18, tzinfo=timezone.utc),
+                    last_status="ok",
+                ),
+            ]
+        )
+        db.commit()
+
+        monkeypatch.setattr("app.services.signals.queries.settings.polymarket_taiwan_market_id", None)
+        response = _answer_question("what does the OSINT signals page show?", db=db)
+
+        assert "Signals wall regime:" in response.answer
+        assert "HY OAS: 312 bps" in response.answer
+        assert "News sentiment top 5: -0.18" in response.answer
+        assert "Polymarket Taiwan: grey; G1 is not configured." in response.answer
+        assert response.data["plan"]["use_signals"] is True
+        assert response.data["signals"]["moduleStates"]
+        assert "signals" in response.citations
+        assert "FRED" in response.citations
 
 
 def test_answer_question_portfolio_summary_falls_back_to_latest_complete_eod_snapshot(monkeypatch):
