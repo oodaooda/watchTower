@@ -10,9 +10,10 @@ can move these to a distributed queue (Celery/Arq/RQ) with minimal changes.
 How it works
 ------------
 - `start_scheduler(tz)` creates a BackgroundScheduler in the provided timezone.
-- We add two Cron jobs:
+- We add recurring jobs:
     * 03:00 → `nightly_fundamentals_job` (fetch EDGAR companyfacts, transform, upsert)
-    * 04:00 → `daily_prices_job` (fetch daily prices, roll up to FY, upsert)
+    * 18:30/20:30 ET weekdays → `daily_prices_job` (portfolio EOD refresh attempts)
+    * 04:00 → `daily_prices_job` fallback catch-up
 - The FastAPI app calls `start_scheduler()` on startup (see `app/api/main.py`).
 - On shutdown we stop the scheduler to avoid orphaned threads.
 
@@ -194,7 +195,21 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
         replace_existing=True,
     )
 
-    # Daily prices at 04:00
+    # Portfolio EOD price/snapshot refresh attempts after regular close and after-hours close.
+    sched.add_job(
+        daily_prices_job,
+        CronTrigger(hour=18, minute=30, day_of_week="mon-fri"),
+        id="daily_prices_eod_primary",
+        replace_existing=True,
+    )
+    sched.add_job(
+        daily_prices_job,
+        CronTrigger(hour=20, minute=30, day_of_week="mon-fri"),
+        id="daily_prices_eod_retry",
+        replace_existing=True,
+    )
+
+    # Daily prices fallback catch-up at 04:00 in case the provider lagged or rate-limited.
     sched.add_job(
         daily_prices_job,
         CronTrigger(hour=4, minute=0),
