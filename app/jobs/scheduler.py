@@ -124,28 +124,28 @@ def signal_m1_hy_oas_job() -> None:
         db.close()
 
 
-def register_signal_jobs(sched: BackgroundScheduler) -> None:
+def register_signal_jobs(sched: BackgroundScheduler, tz: str = "America/New_York") -> None:
     sched.add_job(
         signal_m1_hy_oas_job,
-        CronTrigger(hour=18, minute=15, day_of_week="mon-fri"),
+        CronTrigger(hour=18, minute=15, day_of_week="mon-fri", timezone=tz),
         id="signals_m1_hy_oas",
         replace_existing=True,
     )
     sched.add_job(
         lambda: _run_signal_job("M2"),
-        CronTrigger(hour=18, minute=20, day_of_week="mon-fri"),
+        CronTrigger(hour=18, minute=20, day_of_week="mon-fri", timezone=tz),
         id="signals_m2_real_yield",
         replace_existing=True,
     )
     sched.add_job(
         lambda: _run_signal_job("E1"),
-        CronTrigger(minute="*/15"),
+        CronTrigger(minute="*/15", timezone=tz),
         id="signals_e1_news_sentiment",
         replace_existing=True,
     )
     sched.add_job(
         lambda: _run_signal_job("G1"),
-        CronTrigger(minute="*/5"),
+        CronTrigger(minute="*/5", timezone=tz),
         id="signals_g1_polymarket_taiwan",
         replace_existing=True,
     )
@@ -190,7 +190,7 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
     # Nightly fundamentals at 03:00
     sched.add_job(
         nightly_fundamentals_job,
-        CronTrigger(hour=3, minute=0),
+        CronTrigger(hour=3, minute=0, timezone=tz),
         id="nightly_fundamentals",
         replace_existing=True,
     )
@@ -198,13 +198,13 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
     # Portfolio EOD price/snapshot refresh attempts after regular close and after-hours close.
     sched.add_job(
         daily_prices_job,
-        CronTrigger(hour=18, minute=30, day_of_week="mon-fri"),
+        CronTrigger(hour=18, minute=30, day_of_week="mon-fri", timezone=tz),
         id="daily_prices_eod_primary",
         replace_existing=True,
     )
     sched.add_job(
         daily_prices_job,
-        CronTrigger(hour=20, minute=30, day_of_week="mon-fri"),
+        CronTrigger(hour=20, minute=30, day_of_week="mon-fri", timezone=tz),
         id="daily_prices_eod_retry",
         replace_existing=True,
     )
@@ -212,12 +212,12 @@ def start_scheduler(tz: str = "America/New_York") -> BackgroundScheduler:
     # Daily prices fallback catch-up at 04:00 in case the provider lagged or rate-limited.
     sched.add_job(
         daily_prices_job,
-        CronTrigger(hour=4, minute=0),
+        CronTrigger(hour=4, minute=0, timezone=tz),
         id="daily_prices",
         replace_existing=True,
     )
 
-    register_signal_jobs(sched)
+    register_signal_jobs(sched, tz)
 
     sched.start()
     SCHED = sched
