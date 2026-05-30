@@ -82,6 +82,23 @@ def test_portfolio_snapshot_marks_missing_prices_incomplete():
         assert snapshot.unpriced_positions == 1
 
 
+def test_portfolio_snapshot_skips_market_holidays():
+    SessionLocal = _session_local()
+
+    with SessionLocal() as db:
+        asset = Company(ticker="AAPL", name="Apple Inc.", asset_type="equity")
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        db.add(PortfolioPosition(company_id=asset.id, quantity=10, avg_cost_basis=100))
+        db.add(AssetPriceDaily(company_id=asset.id, price_date=date(2026, 5, 25), close_price=120))
+        db.commit()
+
+        snapshot = create_or_update_portfolio_snapshot(db, snapshot_date=date(2026, 5, 25))
+        assert snapshot is None
+        assert load_portfolio_snapshots(db) == []
+
+
 def test_snapshot_history_summary_calculates_period_changes():
     SessionLocal = _session_local()
 

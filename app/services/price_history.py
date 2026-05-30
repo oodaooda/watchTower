@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time as dt_time, timedelta
+from datetime import date, datetime, time as dt_time
 from decimal import Decimal
 import time
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.models import AssetPriceDaily, Company, PortfolioPosition
+from app.services.market_calendar import (
+    is_us_market_session,
+    previous_us_market_session,
+    us_market_sessions_between,
+)
 
 ALPHA_ENDPOINT = "https://www.alphavantage.co/query"
 DEFAULT_ALPHA_DAILY_SLEEP_SECONDS = 12.0
@@ -20,21 +25,8 @@ ALPHA_RATE_LIMIT_RETRY_SECONDS = 15.0
 EOD_READY_HOUR_ET = 18
 
 
-def _previous_weekday(value: date) -> date:
-    current = value - timedelta(days=1)
-    while current.weekday() >= 5:
-        current -= timedelta(days=1)
-    return current
-
-
 def _weekdays_between(start_date: date, end_date: date) -> List[date]:
-    days: List[date] = []
-    current = start_date
-    while current <= end_date:
-        if current.weekday() < 5:
-            days.append(current)
-        current += timedelta(days=1)
-    return days
+    return us_market_sessions_between(start_date, end_date)
 
 
 def _is_cash_asset(company: Company) -> bool:
@@ -42,13 +34,12 @@ def _is_cash_asset(company: Company) -> bool:
 
 
 def expected_latest_eod_date(now: Optional[datetime] = None) -> date:
-    """Best-effort latest EOD date without a market-holiday calendar."""
     ny_now = now.astimezone(ZoneInfo("America/New_York")) if now else datetime.now(ZoneInfo("America/New_York"))
     today = ny_now.date()
     after_eod_ready = ny_now.time() >= dt_time(EOD_READY_HOUR_ET, 0)
-    if today.weekday() < 5 and after_eod_ready:
+    if is_us_market_session(today) and after_eod_ready:
         return today
-    return _previous_weekday(today)
+    return previous_us_market_session(today)
 
 
 def fetch_alpha_daily_adjusted(symbol: str, api_key: str) -> List[Tuple[date, float]]:
@@ -292,4 +283,4 @@ def complete_portfolio_price_dates(db: Session) -> List[date]:
         .having(func.count(distinct(AssetPriceDaily.company_id)) == required_count)
         .order_by(AssetPriceDaily.price_date.asc())
     ).all()
-    return [row[0] for row in rows]
+    return [row[0] for row in rows if is_us_market_session(row[0])]

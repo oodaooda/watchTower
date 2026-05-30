@@ -466,7 +466,7 @@ export default function PortfolioMarketValueChart({ history, loading, error, sav
 
       {incompleteCount ? (
         <div className="rounded-xl border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200">
-          {incompleteCount} snapshot{incompleteCount === 1 ? "" : "s"} are incomplete because at least one position did not have an EOD close for that date. Incomplete snapshots are not charted as overall portfolio market value.
+          {incompleteCount} snapshot{incompleteCount === 1 ? " is" : "s are"} incomplete because at least one position did not have an EOD close for that date. Incomplete snapshots are not charted as overall portfolio market value.
         </div>
       ) : null}
 

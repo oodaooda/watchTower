@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.models import AssetPriceDaily, PortfolioPosition, PortfolioSnapshotDaily
+from app.services.market_calendar import is_us_market_session
 
 
 def _as_float(value) -> float:
@@ -35,6 +36,8 @@ def create_or_update_portfolio_snapshot(
 
     effective_date = snapshot_date or latest_portfolio_price_date(db)
     if effective_date is None:
+        return None
+    if not is_us_market_session(effective_date):
         return None
 
     price_rows = db.scalars(
@@ -84,9 +87,10 @@ def create_or_update_portfolio_snapshot(
 
 
 def load_portfolio_snapshots(db: Session) -> List[PortfolioSnapshotDaily]:
-    return db.scalars(
+    rows = db.scalars(
         select(PortfolioSnapshotDaily).order_by(PortfolioSnapshotDaily.snapshot_date.asc())
     ).all()
+    return [row for row in rows if is_us_market_session(row.snapshot_date)]
 
 
 def inferred_baseline_snapshot(
